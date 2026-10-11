@@ -1,0 +1,10 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "invoke_subagent",
+        "command": "python3 ${PLUGIN_ROOT}/scripts/spec-gate.py"
+      }
+    ]
+  }
+}
