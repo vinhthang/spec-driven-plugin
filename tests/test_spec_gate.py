@@ -264,7 +264,7 @@ class TestSpecGate(unittest.TestCase):
             encoding="utf-8",
         )
 
-        external_path = Path("/tmp/antigravity/brain/session/artifact.md")
+        external_path = Path("/Users/thanghoang/.gemini/antigravity/brain/session/artifact.md")
         payload = {
             "cwd": str(self.workspace),
             "toolCall": {
@@ -415,6 +415,120 @@ class TestSpecGate(unittest.TestCase):
             decision = evaluate_spec_gate(payload)
             self.assertEqual(decision.get("decision"), "deny")
             self.assertIn("Failed to load spec_checker verification engine: Mock import failure", decision.get("reason", ""))
+
+
+    def test_self_approval_in_index_md_denied(self):
+        """Self-approval writes to docs/specs/INDEX.md are blocked unless already approved or SPEC_GATE_ALLOW_APPROVAL=1."""
+        specs_dir = self.workspace / "docs" / "specs"
+        specs_dir.mkdir(parents=True)
+        index_file = specs_dir / "INDEX.md"
+        index_file.write_text(
+            "| Feature ID | Title | Status | REQ Range | Key Decisions | Spec Path |\n"
+            "| :--- | :--- | :--- | :--- | :--- | :--- |\n"
+            "| `feat-1` | Feature 1 | Planning | `REQ-001` | ADR-001 | `./feat-1/spec.md` |\n"
+            "| `feat-approved` | Feature Approved | Approved | `REQ-002` | ADR-002 | `./feat-approved/spec.md` |\n",
+            encoding="utf-8",
+        )
+
+        # 1. Attempt to promote feat-1 to Approved via replace_file_content -> DENIED
+        payload_promote = {
+            "cwd": str(self.workspace),
+            "toolCall": {
+                "name": "replace_file_content",
+                "args": {
+                    "TargetFile": str(index_file),
+                    "TargetContent": "| `feat-1` | Feature 1 | Planning | `REQ-001` | ADR-001 | `./feat-1/spec.md` |",
+                    "ReplacementContent": "| `feat-1` | Feature 1 | Approved | `REQ-001` | ADR-001 | `./feat-1/spec.md` |",
+                },
+            },
+        }
+        dec_promote = evaluate_spec_gate(payload_promote)
+        self.assertEqual(dec_promote.get("decision"), "deny")
+        self.assertIn("Autonomous self-approval of feature 'feat-1'", dec_promote.get("reason", ""))
+
+        # 2. Attempt to add new feature with Approved via write_to_file -> DENIED
+        new_content = (
+            "| Feature ID | Title | Status | REQ Range | Key Decisions | Spec Path |\n"
+            "| :--- | :--- | :--- | :--- | :--- | :--- |\n"
+            "| `feat-new` | New Feature | Approved | `REQ-003` | ADR-003 | `./feat-new/spec.md` |\n"
+        )
+        payload_new_approved = {
+            "cwd": str(self.workspace),
+            "toolCall": {
+                "name": "write_to_file",
+                "args": {
+                    "TargetFile": str(index_file),
+                    "CodeContent": new_content,
+                },
+            },
+        }
+        dec_new = evaluate_spec_gate(payload_new_approved)
+        self.assertEqual(dec_new.get("decision"), "deny")
+        self.assertIn("Autonomous self-approval of feature 'feat-new'", dec_new.get("reason", ""))
+
+        # 3. Edit already-approved feature (feat-approved) title -> ALLOWED
+        payload_edit_approved = {
+            "cwd": str(self.workspace),
+            "toolCall": {
+                "name": "replace_file_content",
+                "args": {
+                    "TargetFile": str(index_file),
+                    "TargetContent": "| `feat-approved` | Feature Approved | Approved | `REQ-002` | ADR-002 | `./feat-approved/spec.md` |",
+                    "ReplacementContent": "| `feat-approved` | Updated Approved Title | Approved | `REQ-002` | ADR-002 | `./feat-approved/spec.md` |",
+                },
+            },
+        }
+        dec_edit_approved = evaluate_spec_gate(payload_edit_approved)
+        self.assertEqual(dec_edit_approved.get("decision"), "allow")
+
+        # 4. Add/edit feature with Planning or Draft status -> ALLOWED
+        payload_planning = {
+            "cwd": str(self.workspace),
+            "toolCall": {
+                "name": "replace_file_content",
+                "args": {
+                    "TargetFile": str(index_file),
+                    "TargetContent": "| `feat-1` | Feature 1 | Planning | `REQ-001` | ADR-001 | `./feat-1/spec.md` |",
+                    "ReplacementContent": "| `feat-1` | Feature 1 | Draft | `REQ-001` | ADR-001 | `./feat-1/spec.md` |",
+                },
+            },
+        }
+        dec_planning = evaluate_spec_gate(payload_planning)
+        self.assertEqual(dec_planning.get("decision"), "allow")
+
+        # 5. With SPEC_GATE_ALLOW_APPROVAL=1 env var set -> ALLOWED
+        import unittest.mock as mock
+        with mock.patch.dict(os.environ, {"SPEC_GATE_ALLOW_APPROVAL": "1"}):
+            dec_override = evaluate_spec_gate(payload_promote)
+            self.assertEqual(dec_override.get("decision"), "allow")
+
+    def test_workspace_symlink_escape_denied(self):
+        """In-workspace symlinks that resolve outside workspace_root are denied."""
+        self._setup_valid_approved_spec()
+
+        # Create an external directory outside workspace
+        ext_dir = Path(tempfile.mkdtemp())
+        try:
+            ext_target = ext_dir / "target.py"
+            ext_target.write_text("# external file\n", encoding="utf-8")
+
+            # Create an in-workspace symlink pointing to ext_target
+            link_path = self.workspace / "src" / "symlink_escape.py"
+            link_path.parent.mkdir(parents=True, exist_ok=True)
+            link_path.symlink_to(ext_target)
+
+            payload = {
+                "cwd": str(self.workspace),
+                "toolCall": {
+                    "name": "write_to_file",
+                    "args": {"TargetFile": str(link_path)},
+                },
+            }
+            decision = evaluate_spec_gate(payload)
+            self.assertEqual(decision.get("decision"), "deny")
+            self.assertIn("resolves outside workspace root", decision.get("reason", ""))
+        finally:
+            shutil.rmtree(ext_dir, ignore_errors=True)
 
 
 if __name__ == "__main__":

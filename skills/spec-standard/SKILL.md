@@ -33,6 +33,7 @@ Feature specifications and implementation plans connect directly to Antigravity'
 2. **Phase 1 Planning (`/plan`)**: Trigger `/plan` to execute read-only impact analysis, formulate `design.md`, and generate `tasks.md` and the ephemeral implementation plan (`implementation_plan.md`).
 3. **Approval Gate & Human Authority Boundary**: In accordance with `RULE[explicit-approval.md]`, await explicit user confirmation ("Proceed" action or text) before executing any task in `tasks.md`. Autonomous agents operating in planning mode are strictly forbidden from self-promoting specifications to `Approved`, `In-Progress`, or `Active` in `docs/specs/INDEX.md`.
 4. **Standalone Fallbacks**: When slash commands (`/grill-me`, `/plan`) or external plugins are not installed, conduct the requirements interview directly using standard prompts or `ask_question`, author the 4-document planning package (`spec.md`, `decisions.md`, `design.md`, `tasks.md`) directly under `docs/specs/<feature-id>/`, register the feature in `docs/specs/INDEX.md` with status `Draft` or `Planning`, and await human "Proceed" approval before mutating code.
+5. **Mechanical Gate Scope**: In repositories containing `docs/specs/`, `scripts/spec-gate.py` mechanically requires an active execution-authorized spec (`Approved`, `In-Progress`, or `Active`) in `docs/specs/INDEX.md` for all workspace file edits outside `docs/specs/`.
 
 ---
 

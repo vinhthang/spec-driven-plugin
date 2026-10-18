@@ -11,6 +11,7 @@ Enforces precedence order, requirement ID traceability, and authority boundaries
 <scope>
 - **Mandatory (5-Document Architecture)**: Multi-file features, architectural refactors, public API changes, or whenever `/plan` is invoked. Touching >=2 code files, adding/modifying CLI switches/arguments, altering public APIs, or changing data schemas strictly invalidates the fast path.
 - **Exempt (Fast Path)**: Single-file typo fixes, 1-line bug fixes with regression tests, or minor config adjustments touching <= 1 file remain exempt.
+- **Mechanical Gate Scope**: In repositories containing `docs/specs/`, `scripts/spec-gate.py` mechanically requires an active execution-authorized spec (`Approved`, `In-Progress`, or `Active`) in `docs/specs/INDEX.md` for all workspace file edits outside `docs/specs/`. The fast path applies in repositories without `docs/specs/` or when an execution-authorized specification is active.
 </scope>
 
 <constraints>

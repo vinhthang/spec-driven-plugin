@@ -20,7 +20,7 @@
 - **Decision**:
   1. Register `scripts/spec-gate.py` in `hooks.json` using matcher `^(?:default_api:|client:)?(invoke_subagent|write_to_file|replace_file_content|multi_replace_file_content)$`.
   2. Resolve relative target paths against `workspace_root` (`(Path(workspace_root) / raw).resolve()`).
-  3. Automatically allow file writes whose resolved target path is outside `workspace_root` (runtime brain artifacts) or inside `<workspace_root>/docs/specs/`.
+  3. Automatically allow file writes whose resolved target path is in a recognized runtime artifact directory outside `workspace_root` (`.gemini/antigravity/brain`, `.gemini/antigravity/scratch`, or `AGY_RUNTIME_ARTIFACT_DIR`) or inside `<workspace_root>/docs/specs/`.
   4. Fail closed with diagnostic rejection if the target file argument is missing.
 - **Consequences**: Eliminates direct-mutation bypasses while preventing Phase 1 planning deadlocks on brain artifacts and specification files.
 - **Addresses**: `REQ-004`
@@ -33,6 +33,22 @@
 
 ## `ADR-005`: Multi-Feature Validation Isolation & Threat Model Scoping
 - **Context**: `verify_active_specification()` previously iterated through all active specs and failed immediately if any single spec was incomplete. In multi-feature repositories, a newly added `draft` row in `INDEX.md` would block execution of an already `approved` feature. Furthermore, attempting to gate arbitrary shell commands (`run_command`) at the pre-tool hook layer causes severe false positives on tests and builds.
-- **Decision**: Evaluate `EXECUTION_STATUSES` packages first and allow execution if at least one valid, complete `EXECUTION_STATUSES` package passes validation (recording incomplete `PLANNING_STATUSES` packages under `warnings`). Add optional `--feature <feature-id>` filtering. Explicitly declare shell command interception as an out-of-scope non-goal, governed instead by thinking-mode Primary Agent behavioral guardrails.
+- **Decision**: Evaluate `EXECUTION_STATUSES` packages first and allow execution if all `EXECUTION_STATUSES` packages pass validation and at least one exists (recording incomplete `PLANNING_STATUSES` packages under `warnings`). Add optional `--feature <feature-id>` filtering. Explicitly declare shell command interception as an out-of-scope non-goal, governed instead by thinking-mode Primary Agent behavioral guardrails.
 - **Consequences**: Enables concurrent feature planning and execution without cross-feature blocking, and establishes a clear, enforceable threat model.
 - **Addresses**: `REQ-006`
+
+## `ADR-006`: Phase 3 Hardening — Terminal Evidence Verification, Declaration Extraction, Symlink Containment & Mechanical Self-Approval Guard
+- **Context**: Architectural review of the Phase 2 implementation identified five residual gaps:
+  1. Transitioning a feature to `Implemented` in `docs/specs/INDEX.md` caused `spec_checker.py --verify-evidence` and `--feature <id>` to fail with `no_active_spec` because `TERMINAL_STATUSES` were dropped prior to verification.
+  2. `validate_spec_package()` included an undocumented `Governing Specification:.*spec\.md` bypass that skipped `design.md` traceability checks, and `extract_requirement_ids()` scraped all prose mentions in `spec.md` rather than declared requirements.
+  3. `parse_specs_index()` checked `len(parts) < 6` rather than `len(parts) != 6`, silently truncating rows with unescaped pipes.
+  4. `is_allowed_runtime_artifact_path()` exempted all of `/tmp` and `tempfile.gettempdir()`, allowing in-workspace symlinks pointing to `/tmp` to escape workspace gating, and `payload.get("cwd")` took precedence over `AGY_ACTIVE_WORKSPACE`.
+  5. Unconditional write allowance on `docs/specs/INDEX.md` allowed agents to self-promote statuses to `Approved` via tool calls.
+- **Decision**:
+  1. Allow `verify_active_specification()` to validate `completed`, `implemented`, and `done` specs when `feature_id` is explicitly requested or when `verify_evidence=True` is set and no active specs exist, automatically enforcing `verify_evidence=True` on completed/implemented specs.
+  2. Remove the `Governing Specification:.*spec\.md` bypass in `validate_spec_package()` and add `extract_declared_requirement_ids()` for `spec.md` heading/bullet/table declarations.
+  3. Enforce `len(parts) != 6` in `parse_specs_index()`.
+  4. Narrow `is_allowed_runtime_artifact_path()` to `.gemini/antigravity/brain`, `.gemini/antigravity/scratch`, and `AGY_RUNTIME_ARTIFACT_DIR` (removing generic `/tmp`), block in-workspace symlinks that resolve outside `workspace_path`, and prioritize `AGY_ACTIVE_WORKSPACE` over `payload.get("cwd")`.
+  5. In `spec-gate.py`, inspect writes to `docs/specs/INDEX.md` and reject mutations that promote a feature to `EXECUTION_STATUSES` unless that feature already has an `EXECUTION_STATUSES` status in the on-disk `INDEX.md` or `SPEC_GATE_ALLOW_APPROVAL=1` is set.
+- **Consequences**: Closes the self-approval and symlink-escape loopholes, restores full `AC-001-2`, `AC-001-3`, and `AC-006-2` compliance, and ensures completed specifications remain verifiable with `--verify-evidence` and `--feature`.
+- **Addresses**: `REQ-001`, `REQ-003`, `REQ-004`, `REQ-006`, `REQ-007`, `REQ-008`

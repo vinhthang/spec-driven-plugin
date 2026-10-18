@@ -309,6 +309,112 @@ class TestSpecChecker(unittest.TestCase):
         self.assertEqual(res["status"], "incomplete_package")
         self.assertEqual(res.get("feature_id"), "feat-broken")
 
+    def test_declared_requirement_ids_ignores_prose_mentions(self):
+        """Test that extract_declared_requirement_ids ignores prose mentions and only captures declarations."""
+        spec_text = (
+            "# Spec Title\n\n"
+            "In previous iterations, we worked on REQ-099 and FLOW-999 in legacy services.\n\n"
+            "### REQ-001: First Core Requirement\n"
+            "System must do X.\n\n"
+            "- **REQ-002**: Second Core Requirement\n"
+            "- Note: this interacts with REQ-088 in prose.\n\n"
+            "| Requirement ID | Description |\n"
+            "| `ALIGN-003` | Third Core Requirement |\n"
+        )
+        declared = spec_checker.extract_declared_requirement_ids(spec_text)
+        self.assertEqual(declared, ["ALIGN-003", "REQ-001", "REQ-002"])
+        self.assertNotIn("REQ-099", declared)
+        self.assertNotIn("FLOW-999", declared)
+        self.assertNotIn("REQ-088", declared)
+
+        # Test validation of package where spec.md has prose mentions:
+        pkg = self.workspace / "pkg-prose"
+        pkg.mkdir()
+        (pkg / "spec.md").write_text(spec_text, encoding="utf-8")
+        (pkg / "decisions.md").write_text("# Decisions\nADR-001: Architecture decision\n", encoding="utf-8")
+        (pkg / "design.md").write_text("# Design\nAddresses: ALIGN-003, REQ-001, REQ-002\n", encoding="utf-8")
+        (pkg / "tasks.md").write_text("# Tasks\n- [ ] ALIGN-003\n- [ ] REQ-001\n- [ ] REQ-002\n", encoding="utf-8")
+
+        valid, err = spec_checker.validate_spec_package(pkg)
+        self.assertTrue(valid, f"Validation failed with: {err}")
+
+    def test_governing_spec_link_does_not_bypass_design_traceability(self):
+        """Governing Specification link in design.md must NOT bypass requirement ID traceability."""
+        pkg = self.workspace / "pkg-gov"
+        pkg.mkdir()
+        (pkg / "spec.md").write_text("# Spec\n### REQ-001: Statement\n", encoding="utf-8")
+        (pkg / "decisions.md").write_text("# Decisions\nADR-001: Decision\n", encoding="utf-8")
+        (pkg / "design.md").write_text("# Design\nGoverning Specification: spec.md\nNo requirement IDs here.\n", encoding="utf-8")
+        (pkg / "tasks.md").write_text("# Tasks\n- [ ] REQ-001\n", encoding="utf-8")
+
+        valid, err = spec_checker.validate_spec_package(pkg)
+        self.assertFalse(valid)
+        self.assertIn("design.md is missing requirement IDs declared in spec.md: REQ-001", err)
+
+    def test_parse_specs_index_extra_columns_raises(self):
+        """Table row with more than 6 columns raises ValueError and results in corrupt_index."""
+        specs_dir = self.workspace / "docs" / "specs"
+        specs_dir.mkdir(parents=True)
+        index_file = specs_dir / "INDEX.md"
+        index_file.write_text(
+            "# Feature Specifications\n\n"
+            "| Feature ID | Title | Status | REQ Range | Key Decisions | Spec Path | Extra Col |\n"
+            "| :--- | :--- | :--- | :--- | :--- | :--- | :--- |\n"
+            "| `feat-1` | Feature One | Planning | `REQ-001` | ADR-01 | `./feat-1/spec.md` | Spurious |\n",
+            encoding="utf-8",
+        )
+
+        with self.assertRaises(ValueError) as ctx:
+            spec_checker.parse_specs_index(index_file)
+        self.assertIn("Malformed table row", str(ctx.exception))
+        self.assertIn("expected 6 columns, got 7", str(ctx.exception))
+
+        res = spec_checker.verify_active_specification(self.workspace)
+        self.assertFalse(res["valid"])
+        self.assertEqual(res["status"], "corrupt_index")
+
+    def test_verify_terminal_implemented_spec_with_feature_and_verify_evidence(self):
+        """Terminal Implemented/Completed specs pass when --feature or --verify-evidence is supplied, but block require_approved without them."""
+        specs_dir = self.workspace / "docs" / "specs"
+        specs_dir.mkdir(parents=True)
+        pkg_done = specs_dir / "feat-done"
+        self._create_valid_package(pkg_done, req_ids=("REQ-001",))
+        # Add valid verification.md
+        (pkg_done / "verification.md").write_text("# Verification\nEvidence for REQ-001: PASSED\n", encoding="utf-8")
+
+        (specs_dir / "INDEX.md").write_text(
+            "| Feature ID | Title | Status | REQ Range | Key Decisions | Spec Path |\n"
+            "| :--- | :--- | :--- | :--- | :--- | :--- |\n"
+            "| `feat-done` | Completed Feature | Implemented | `REQ-001` | ADR-001 | `./feat-done/spec.md` |\n",
+            encoding="utf-8",
+        )
+
+        # Case 1: Standard gate check (require_approved=True, feature_id=None, verify_evidence=False)
+        # Should return no_active_spec because no execution/planning specs exist
+        res1 = spec_checker.verify_active_specification(self.workspace, require_approved=True)
+        self.assertFalse(res1["valid"])
+        self.assertEqual(res1["status"], "no_active_spec")
+
+        # Case 2: Specific feature target via --feature feat-done
+        # Should validate feat-done and enforce verification.md
+        res2 = spec_checker.verify_active_specification(self.workspace, feature_id="feat-done")
+        self.assertTrue(res2["valid"])
+        self.assertEqual(res2["status"], "valid")
+        self.assertIn("feat-done", res2["active_features"])
+
+        # Case 3: Global --verify-evidence on terminal specs
+        res3 = spec_checker.verify_active_specification(self.workspace, verify_evidence=True)
+        self.assertTrue(res3["valid"])
+        self.assertEqual(res3["status"], "valid")
+        self.assertIn("feat-done", res3["active_features"])
+
+        # Case 4: Terminal spec missing verification.md fails when audited with feature_id
+        (pkg_done / "verification.md").unlink()
+        res4 = spec_checker.verify_active_specification(self.workspace, feature_id="feat-done")
+        self.assertFalse(res4["valid"])
+        self.assertEqual(res4["status"], "incomplete_package")
+        self.assertIn("verification.md", res4["reason"])
+
 
 if __name__ == "__main__":
     unittest.main()

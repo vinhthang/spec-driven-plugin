@@ -60,24 +60,81 @@ def is_allowed_runtime_artifact_path(target_path: Path) -> bool:
     if ".gemini/antigravity/brain" in target_str or ".gemini/antigravity/scratch" in target_str:
         return True
 
-    try:
-        tmp_dir = Path(tempfile.gettempdir()).resolve()
-        if target_path.is_relative_to(tmp_dir):
-            return True
-    except (ValueError, RuntimeError):
-        pass
-
-    try:
-        sys_tmp = Path("/tmp").resolve()
-        if target_path.is_relative_to(sys_tmp):
-            return True
-    except (ValueError, RuntimeError):
-        pass
-
-    if target_str.startswith("/tmp") or target_str.startswith("/private/tmp"):
-        return True
+    custom_artifact_dir = os.environ.get("AGY_RUNTIME_ARTIFACT_DIR")
+    if custom_artifact_dir and custom_artifact_dir.strip():
+        try:
+            custom_path = Path(custom_artifact_dir).resolve()
+            if target_path.resolve().is_relative_to(custom_path):
+                return True
+        except (ValueError, RuntimeError):
+            pass
 
     return False
+
+
+def is_unauthorized_status_promotion(
+    index_path: Path, args: Dict[str, Any], checker: Any
+) -> Tuple[bool, str]:
+    """Detect unauthorized promotion of features to execution-authorized statuses in docs/specs/INDEX.md."""
+    if os.environ.get("SPEC_GATE_ALLOW_APPROVAL") == "1":
+        return False, ""
+
+    existing_approved = set()
+    disk_text = ""
+    if index_path.exists() and index_path.is_file():
+        try:
+            disk_text = index_path.read_text(encoding="utf-8")
+            existing_records = checker.parse_specs_index(index_path)
+            existing_approved = {
+                r["feature_id"]
+                for r in existing_records
+                if checker.normalize_status(r.get("status", "")) in checker.EXECUTION_STATUSES
+            }
+        except Exception:
+            pass
+
+    # Project new file content
+    if "TargetContent" in args and "ReplacementContent" in args:
+        target_c = args.get("TargetContent", "")
+        repl_c = args.get("ReplacementContent", "")
+        projected_text = disk_text.replace(target_c, repl_c, 1)
+    elif "ReplacementChunks" in args and isinstance(args.get("ReplacementChunks"), list):
+        projected_text = disk_text
+        for chunk in args.get("ReplacementChunks", []):
+            target_c = chunk.get("TargetContent", "")
+            repl_c = chunk.get("ReplacementContent", "")
+            if target_c:
+                projected_text = projected_text.replace(target_c, repl_c, 1)
+    elif args.get("Append"):
+        projected_text = disk_text + "\n" + (args.get("CodeContent") or args.get("Content") or "")
+    else:
+        projected_text = args.get("CodeContent") or args.get("Content") or args.get("ReplacementContent") or ""
+
+    texts_to_scan = [projected_text]
+    if "ReplacementContent" in args and args["ReplacementContent"] not in texts_to_scan:
+        texts_to_scan.append(args["ReplacementContent"])
+
+    for text in texts_to_scan:
+        for line in text.splitlines():
+            trimmed = line.strip()
+            if not trimmed.startswith("|") or not trimmed.endswith("|"):
+                continue
+            raw_parts = re.split(r"(?<!\\)\|", trimmed[1:-1])
+            parts = [p.replace(r"\|", "|").strip() for p in raw_parts]
+            col0 = parts[0].strip("` ") if parts else ""
+            if col0.lower() == "feature id" or re.match(r"^:?-+:?$", col0):
+                continue
+            if len(parts) >= 3:
+                feat_id = col0
+                status = parts[2].strip("` ")
+                if checker.normalize_status(status) in checker.EXECUTION_STATUSES:
+                    if feat_id not in existing_approved:
+                        return (
+                            True,
+                            f"Spec Gate Rejection: Autonomous self-approval of feature '{feat_id}' to status '{status}' in docs/specs/INDEX.md is forbidden. Register as Draft/Planning and ask the user to approve.",
+                        )
+
+    return False, ""
 
 
 def is_exempt_subagent(sa: Dict[str, Any]) -> bool:
@@ -147,13 +204,23 @@ def evaluate_spec_gate(payload: Dict[str, Any]) -> Dict[str, Any]:
                 "reason": "Spec Gate Rejection: Missing target file path in mutation tool call",
             }
 
-        workspace_root = payload.get("cwd") or os.environ.get("AGY_ACTIVE_WORKSPACE") or os.getcwd()
+        workspace_root = os.environ.get("AGY_ACTIVE_WORKSPACE") or payload.get("cwd") or os.getcwd()
         workspace_path = Path(workspace_root).resolve()
 
-        target = Path(raw_path)
-        if not target.is_absolute():
-            target = workspace_path / target
-        resolved_target = target.resolve()
+        raw_target = Path(raw_path)
+        lexical_target = raw_target if raw_target.is_absolute() else (workspace_path / raw_target)
+        try:
+            lexical_abs = lexical_target.parent.resolve() / lexical_target.name
+        except Exception:
+            lexical_abs = Path(os.path.abspath(str(lexical_target)))
+        resolved_target = lexical_target.resolve()
+
+        # If lexical target is within workspace but resolves outside, block symlink escape
+        if lexical_abs.is_relative_to(workspace_path) and not resolved_target.is_relative_to(workspace_path):
+            return {
+                "decision": "deny",
+                "reason": f"Spec Gate Rejection: Symlink target '{raw_path}' resolves outside workspace root ('{resolved_target}')",
+            }
 
         # If outside workspace_root (e.g. runtime brain artifacts), only allow recognized artifact paths
         if not resolved_target.is_relative_to(workspace_path):
@@ -164,6 +231,14 @@ def evaluate_spec_gate(payload: Dict[str, Any]) -> Dict[str, Any]:
                 "reason": f"Spec Gate Rejection: File mutation target '{resolved_target}' is outside workspace root and not a recognized runtime artifact path",
             }
 
+        # If targeting docs/specs/INDEX.md, check for unauthorized self-approval
+        if resolved_target == (workspace_path / "docs" / "specs" / "INDEX.md"):
+            checker, err = load_spec_checker()
+            if checker:
+                unauth, reason = is_unauthorized_status_promotion(resolved_target, args, checker)
+                if unauth:
+                    return {"decision": "deny", "reason": reason}
+
         # If inside docs/specs/, allow unconditionally for specification authoring
         if resolved_target.is_relative_to(workspace_path / "docs" / "specs"):
             return {"decision": "allow"}
@@ -173,7 +248,7 @@ def evaluate_spec_gate(payload: Dict[str, Any]) -> Dict[str, Any]:
         return {"decision": "allow"}
 
     # Evaluate specification status
-    workspace_root = payload.get("cwd") or os.environ.get("AGY_ACTIVE_WORKSPACE") or os.getcwd()
+    workspace_root = os.environ.get("AGY_ACTIVE_WORKSPACE") or payload.get("cwd") or os.getcwd()
     checker, err = load_spec_checker()
     if not checker:
         return {
