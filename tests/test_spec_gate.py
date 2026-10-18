@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
-"""Unit tests for PreToolUse Spec Gate Hook (REQ-031)."""
+"""Unit tests for PreToolUse Spec Gate Hook (REQ-002, REQ-004, REQ-005, REQ-008)."""
 
+import importlib.util
 import json
 import os
 import shutil
@@ -13,8 +14,6 @@ from pathlib import Path
 SCRIPTS_DIR = Path(__file__).resolve().parent.parent / "scripts"
 if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
-
-import importlib.util
 
 spec = importlib.util.spec_from_file_location(
     "spec_gate",
@@ -39,8 +38,23 @@ class TestSpecGate(unittest.TestCase):
     def tearDown(self):
         shutil.rmtree(self.test_dir, ignore_errors=True)
 
+    def _setup_valid_approved_spec(self):
+        specs_dir = self.workspace / "docs" / "specs"
+        pkg_dir = specs_dir / "feat-valid"
+        pkg_dir.mkdir(parents=True, exist_ok=True)
+        (specs_dir / "INDEX.md").write_text(
+            "| Feature ID | Title | Status | REQ Range | Key Decisions | Spec Path |\n"
+            "| :--- | :--- | :--- | :--- | :--- | :--- |\n"
+            "| `feat-valid` | Valid | Approved | `REQ-001` | ADR-001 | `./feat-valid/spec.md` |\n",
+            encoding="utf-8",
+        )
+        (pkg_dir / "spec.md").write_text("# Spec\nREQ-001: Description\n", encoding="utf-8")
+        (pkg_dir / "decisions.md").write_text("# Decisions\nADR-001: Rationale\n", encoding="utf-8")
+        (pkg_dir / "design.md").write_text("# Design\nAddresses REQ-001\n", encoding="utf-8")
+        (pkg_dir / "tasks.md").write_text("# Tasks\n- [ ] Task REQ-001\n", encoding="utf-8")
+
     def test_exempt_research_subagent(self):
-        """Research subagents are exempt from spec gate."""
+        """Research subagents without mutation keywords are exempt from spec gate."""
         payload = {
             "cwd": str(self.workspace),
             "toolCall": {
@@ -59,34 +73,24 @@ class TestSpecGate(unittest.TestCase):
         decision = evaluate_spec_gate(payload)
         self.assertEqual(decision.get("decision"), "allow")
 
-    def test_exempt_translation_pipeline(self):
-        """Translation subagents working on runs/ are exempt."""
-        payload = {
-            "cwd": str(self.workspace),
-            "toolCall": {
-                "name": "invoke_subagent",
-                "args": {
-                    "Subagents": [
-                        {
-                            "TypeName": "translate",
-                            "Role": "Translator",
-                            "Prompt": "Translate runs/sample_book/ch01/source.txt to vietnamese",
-                        }
-                    ]
-                },
-            },
+    def test_word_boundary_codebase_researcher_not_mutating(self):
+        """Word boundary keyword matching prevents 'code' in 'codebase researcher' from triggering mutation."""
+        sa = {
+            "TypeName": "research",
+            "Role": "Codebase Researcher",
+            "Prompt": "Survey code architecture and patterns",
         }
-        decision = evaluate_spec_gate(payload)
-        self.assertEqual(decision.get("decision"), "allow")
+        self.assertFalse(is_mutating_subagent(sa))
+        self.assertTrue(is_exempt_subagent(sa))
 
-    def test_denial_mutating_subagent_no_active_spec(self):
-        """Mutating subagent is denied when no active spec exists."""
+    def test_role_spoofing_rejected(self):
+        """Subagents with research TypeName but mutating prompts fail closed and require active spec."""
         specs_dir = self.workspace / "docs" / "specs"
         specs_dir.mkdir(parents=True)
         (specs_dir / "INDEX.md").write_text(
             "| Feature ID | Title | Status | REQ Range | Key Decisions | Spec Path |\n"
             "| :--- | :--- | :--- | :--- | :--- | :--- |\n"
-            "| `feat-old` | Old Feature | Completed | `REQ-001` | ADR | `./feat-old/spec.md` |\n",
+            "| `feat-old` | Old | Completed | `REQ-001` | ADR-001 | `./feat-old/spec.md` |\n",
             encoding="utf-8",
         )
 
@@ -97,9 +101,9 @@ class TestSpecGate(unittest.TestCase):
                 "args": {
                     "Subagents": [
                         {
-                            "TypeName": "self",
-                            "Role": "Feature Implementer",
-                            "Prompt": "Implement feature by modifying scripts/helper.py",
+                            "TypeName": "research",
+                            "Role": "Codebase Researcher",
+                            "Prompt": "Implement feature by patching scripts/helper.py",
                         }
                     ]
                 },
@@ -108,13 +112,20 @@ class TestSpecGate(unittest.TestCase):
         decision = evaluate_spec_gate(payload)
         self.assertEqual(decision.get("decision"), "deny")
         self.assertIn("Spec Gate Rejection", decision.get("reason", ""))
-        self.assertIn("No active specification found", decision.get("reason", ""))
 
-    def test_allowance_mutating_subagent_with_valid_active_spec(self):
-        """Mutating subagent is allowed when a valid active spec package exists."""
-        repo_root = Path(__file__).resolve().parent.parent.parent / "ai-review-plugin"
+    def test_subagent_denial_no_active_spec(self):
+        """Mutating subagents are denied when no active spec exists."""
+        specs_dir = self.workspace / "docs" / "specs"
+        specs_dir.mkdir(parents=True)
+        (specs_dir / "INDEX.md").write_text(
+            "| Feature ID | Title | Status | REQ Range | Key Decisions | Spec Path |\n"
+            "| :--- | :--- | :--- | :--- | :--- | :--- |\n"
+            "| `feat-old` | Old | Completed | `REQ-001` | ADR-001 | `./feat-old/spec.md` |\n",
+            encoding="utf-8",
+        )
+
         payload = {
-            "cwd": str(repo_root),
+            "cwd": str(self.workspace),
             "toolCall": {
                 "name": "invoke_subagent",
                 "args": {
@@ -122,7 +133,65 @@ class TestSpecGate(unittest.TestCase):
                         {
                             "TypeName": "self",
                             "Role": "Feature Implementer",
-                            "Prompt": "Implement spec-gate feature in code",
+                            "Prompt": "Implement feature in scripts/helper.py",
+                        }
+                    ]
+                },
+            },
+        }
+        decision = evaluate_spec_gate(payload)
+        self.assertEqual(decision.get("decision"), "deny")
+        self.assertIn("No active specification found", decision.get("reason", ""))
+
+    def test_subagent_denial_unapproved_spec(self):
+        """Mutating subagents are denied when specification is in planning status."""
+        specs_dir = self.workspace / "docs" / "specs"
+        pkg_dir = specs_dir / "feat-plan"
+        pkg_dir.mkdir(parents=True)
+        (specs_dir / "INDEX.md").write_text(
+            "| Feature ID | Title | Status | REQ Range | Key Decisions | Spec Path |\n"
+            "| :--- | :--- | :--- | :--- | :--- | :--- |\n"
+            "| `feat-plan` | Plan | Planning | `REQ-001` | ADR-001 | `./feat-plan/spec.md` |\n",
+            encoding="utf-8",
+        )
+        (pkg_dir / "spec.md").write_text("# Spec\nREQ-001: Description\n", encoding="utf-8")
+        (pkg_dir / "decisions.md").write_text("# Decisions\nADR-001: Rationale\n", encoding="utf-8")
+        (pkg_dir / "design.md").write_text("# Design\nAddresses REQ-001\n", encoding="utf-8")
+        (pkg_dir / "tasks.md").write_text("# Tasks\n- [ ] Task REQ-001\n", encoding="utf-8")
+
+        payload = {
+            "cwd": str(self.workspace),
+            "toolCall": {
+                "name": "invoke_subagent",
+                "args": {
+                    "Subagents": [
+                        {
+                            "TypeName": "self",
+                            "Role": "Executor",
+                            "Prompt": "Execute implementation",
+                        }
+                    ]
+                },
+            },
+        }
+        decision = evaluate_spec_gate(payload)
+        self.assertEqual(decision.get("decision"), "deny")
+        self.assertIn("planning/draft status but is not yet approved", decision.get("reason", ""))
+
+    def test_subagent_allowance_with_approved_spec(self):
+        """Mutating subagents are allowed when a valid approved specification exists."""
+        self._setup_valid_approved_spec()
+
+        payload = {
+            "cwd": str(self.workspace),
+            "toolCall": {
+                "name": "invoke_subagent",
+                "args": {
+                    "Subagents": [
+                        {
+                            "TypeName": "self",
+                            "Role": "Feature Implementer",
+                            "Prompt": "Implement feature per task instructions",
                         }
                     ]
                 },
@@ -131,52 +200,143 @@ class TestSpecGate(unittest.TestCase):
         decision = evaluate_spec_gate(payload)
         self.assertEqual(decision.get("decision"), "allow")
 
-    def test_non_subagent_tool_allowed(self):
-        """Non-subagent tool calls are unconditionally allowed by spec-gate."""
+    def test_direct_mutation_tools_gating(self):
+        """Direct file-mutation tools are gated when modifying workspace code without approved spec."""
+        specs_dir = self.workspace / "docs" / "specs"
+        specs_dir.mkdir(parents=True)
+        (specs_dir / "INDEX.md").write_text(
+            "| Feature ID | Title | Status | REQ Range | Key Decisions | Spec Path |\n"
+            "| :--- | :--- | :--- | :--- | :--- | :--- |\n"
+            "| `feat-1` | Feature 1 | Planning | `REQ-001` | ADR-001 | `./feat-1/spec.md` |\n",
+            encoding="utf-8",
+        )
+
+        for tool_name in [
+            "write_to_file",
+            "replace_file_content",
+            "multi_replace_file_content",
+            "default_api:write_to_file",
+            "client:replace_file_content",
+        ]:
+            payload = {
+                "cwd": str(self.workspace),
+                "toolCall": {
+                    "name": tool_name,
+                    "args": {"TargetFile": str(self.workspace / "src" / "app.py")},
+                },
+            }
+            decision = evaluate_spec_gate(payload)
+            self.assertEqual(decision.get("decision"), "deny", f"Tool {tool_name} should be denied")
+
+        # Now approve spec -> should allow
+        self._setup_valid_approved_spec()
+        payload = {
+            "cwd": str(self.workspace),
+            "toolCall": {
+                "name": "write_to_file",
+                "args": {"TargetFile": str(self.workspace / "src" / "app.py")},
+            },
+        }
+        decision = evaluate_spec_gate(payload)
+        self.assertEqual(decision.get("decision"), "allow")
+
+    def test_direct_mutation_missing_target_file_fails_closed(self):
+        """Direct file-mutation tools fail closed when target file path argument is missing."""
+        payload = {
+            "cwd": str(self.workspace),
+            "toolCall": {
+                "name": "write_to_file",
+                "args": {"CodeContent": "print('hello')"},
+            },
+        }
+        decision = evaluate_spec_gate(payload)
+        self.assertEqual(decision.get("decision"), "deny")
+        self.assertIn("Missing target file path", decision.get("reason", ""))
+
+    def test_direct_mutation_external_brain_artifact_exemption(self):
+        """Writing to files outside workspace (e.g. brain runtime artifacts) is allowed unconditionally."""
+        specs_dir = self.workspace / "docs" / "specs"
+        specs_dir.mkdir(parents=True)
+        (specs_dir / "INDEX.md").write_text(
+            "| Feature ID | Title | Status | REQ Range | Key Decisions | Spec Path |\n"
+            "| :--- | :--- | :--- | :--- | :--- | :--- |\n"
+            "| `feat-1` | Feature 1 | Planning | `REQ-001` | ADR-001 | `./feat-1/spec.md` |\n",
+            encoding="utf-8",
+        )
+
+        external_path = Path("/tmp/antigravity/brain/session/artifact.md")
+        payload = {
+            "cwd": str(self.workspace),
+            "toolCall": {
+                "name": "write_to_file",
+                "args": {"TargetFile": str(external_path)},
+            },
+        }
+        decision = evaluate_spec_gate(payload)
+        self.assertEqual(decision.get("decision"), "allow")
+
+    def test_direct_mutation_docs_specs_authoring_exemption(self):
+        """Writing to docs/specs/ is allowed unconditionally for specification authoring."""
+        specs_dir = self.workspace / "docs" / "specs"
+        specs_dir.mkdir(parents=True)
+        (specs_dir / "INDEX.md").write_text(
+            "| Feature ID | Title | Status | REQ Range | Key Decisions | Spec Path |\n"
+            "| :--- | :--- | :--- | :--- | :--- | :--- |\n"
+            "| `feat-1` | Feature 1 | Planning | `REQ-001` | ADR-001 | `./feat-1/spec.md` |\n",
+            encoding="utf-8",
+        )
+
+        spec_file = self.workspace / "docs" / "specs" / "feat-1" / "spec.md"
+        payload = {
+            "cwd": str(self.workspace),
+            "toolCall": {
+                "name": "write_to_file",
+                "args": {"TargetFile": str(spec_file)},
+            },
+        }
+        decision = evaluate_spec_gate(payload)
+        self.assertEqual(decision.get("decision"), "allow")
+
+    def test_non_gated_tool_allowed(self):
+        """Tools not in subagent or mutation sets are allowed unconditionally."""
         payload = {
             "cwd": str(self.workspace),
             "toolCall": {
                 "name": "run_command",
-                "args": {"CommandLine": "ls -la"},
+                "args": {"CommandLine": "git status"},
             },
         }
         decision = evaluate_spec_gate(payload)
         self.assertEqual(decision.get("decision"), "allow")
 
     def test_cli_execution_via_stdin(self):
-        """Test executing spec-gate.py CLI via stdin."""
+        """Test executing spec-gate.py CLI via stdin with valid and invalid payloads."""
         script_path = SCRIPTS_DIR / "spec-gate.py"
-        repo_root = Path(__file__).resolve().parent.parent.parent / "ai-review-plugin"
 
-        # Allowed request
+        # Allowed request (non-gated tool via stdin)
         payload_allow = {
-            "cwd": str(repo_root),
+            "cwd": str(self.workspace),
             "toolCall": {
-                "name": "invoke_subagent",
-                "args": {
-                    "Subagents": [
-                        {"TypeName": "research", "Role": "Researcher", "Prompt": "Find files"}
-                    ]
-                },
+                "name": "run_command",
+                "args": {"CommandLine": "git status"},
             },
         }
-        proc = subprocess.run(
+        proc_allow = subprocess.run(
             [sys.executable, str(script_path)],
             input=json.dumps(payload_allow),
             capture_output=True,
             text=True,
         )
-        self.assertEqual(proc.returncode, 0)
-        data = json.loads(proc.stdout)
-        self.assertEqual(data.get("decision"), "allow")
+        self.assertEqual(proc_allow.returncode, 0)
+        self.assertEqual(json.loads(proc_allow.stdout).get("decision"), "allow")
 
-        # Denied request (no active spec in empty temp workspace)
+        # Denied request (subagent mutation without active spec)
         specs_dir = self.workspace / "docs" / "specs"
         specs_dir.mkdir(parents=True)
         (specs_dir / "INDEX.md").write_text(
             "| Feature ID | Title | Status | REQ Range | Key Decisions | Spec Path |\n"
             "| :--- | :--- | :--- | :--- | :--- | :--- |\n"
-            "| `feat-old` | Old Feature | Completed | `REQ-001` | ADR | `./feat-old/spec.md` |\n",
+            "| `feat-old` | Old | Completed | `REQ-001` | ADR-001 | `./feat-old/spec.md` |\n",
             encoding="utf-8",
         )
         payload_deny = {
@@ -185,7 +345,7 @@ class TestSpecGate(unittest.TestCase):
                 "name": "invoke_subagent",
                 "args": {
                     "Subagents": [
-                        {"TypeName": "self", "Role": "Coder", "Prompt": "Write to file scripts/test.py"}
+                        {"TypeName": "self", "Role": "Implementer", "Prompt": "Write code"}
                     ]
                 },
             },
@@ -200,6 +360,61 @@ class TestSpecGate(unittest.TestCase):
         data_deny = json.loads(proc_deny.stdout)
         self.assertEqual(data_deny.get("decision"), "deny")
         self.assertIn("Spec Gate Rejection", data_deny.get("reason", ""))
+
+    def test_empty_stdin_fails_closed(self):
+        """Test that empty or whitespace-only stdin emits deny decision."""
+        script_path = SCRIPTS_DIR / "spec-gate.py"
+
+        for empty_input in ["", "   ", "\n\t  \n"]:
+            proc = subprocess.run(
+                [sys.executable, str(script_path)],
+                input=empty_input,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(proc.returncode, 0)
+            data = json.loads(proc.stdout)
+            self.assertEqual(data.get("decision"), "deny")
+            self.assertEqual(data.get("reason"), "Spec Gate Rejection: Empty payload on stdin")
+
+    def test_unauthorized_external_path_fails_closed(self):
+        """Writing to an external path outside workspace and not a recognized runtime artifact path fails closed."""
+        self._setup_valid_approved_spec()
+
+        unauthorized_paths = [
+            "/etc/hosts",
+            "/Users/thanghoang/github/other-project/src/main.py",
+            "/var/log/system.log",
+        ]
+
+        for path in unauthorized_paths:
+            payload = {
+                "cwd": str(self.workspace),
+                "toolCall": {
+                    "name": "write_to_file",
+                    "args": {"TargetFile": path},
+                },
+            }
+            decision = evaluate_spec_gate(payload)
+            self.assertEqual(decision.get("decision"), "deny", f"Expected deny for {path}")
+            self.assertIn("is outside workspace root and not a recognized runtime artifact path", decision.get("reason", ""))
+
+    def test_checker_load_failure_fails_closed(self):
+        """When load_spec_checker returns (None, err), evaluate_spec_gate fails closed with deny."""
+        self._setup_valid_approved_spec()
+
+        import unittest.mock as mock
+        with mock.patch.object(spec_gate_mod, "load_spec_checker", return_value=(None, "Mock import failure")):
+            payload = {
+                "cwd": str(self.workspace),
+                "toolCall": {
+                    "name": "write_to_file",
+                    "args": {"TargetFile": str(self.workspace / "src" / "app.py")},
+                },
+            }
+            decision = evaluate_spec_gate(payload)
+            self.assertEqual(decision.get("decision"), "deny")
+            self.assertIn("Failed to load spec_checker verification engine: Mock import failure", decision.get("reason", ""))
 
 
 if __name__ == "__main__":

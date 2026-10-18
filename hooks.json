@@ -2,7 +2,7 @@
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "invoke_subagent",
+        "matcher": "^(?:default_api:|client:)?(invoke_subagent|write_to_file|replace_file_content|multi_replace_file_content)$",
         "command": "python3 ${PLUGIN_ROOT}/scripts/spec-gate.py"
       }
     ]

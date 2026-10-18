@@ -20,16 +20,23 @@ Enforces precedence order, requirement ID traceability, and authority boundaries
   3. `design.md`: How we intend to build it (Revisable architecture blueprint).
   4. `tasks.md`: What remains to be done (Execution checklist).
   5. `verification.md`: Verbatim evidence that it works (Append-only per run).
+- **Mandatory Planning Package & Verification Boundary**:
+  - The 4-document set (`spec.md`, `decisions.md`, `design.md`, `tasks.md`) forms the mandatory planning baseline verified by `spec_checker.py` before any code mutation or subagent execution.
+  - `verification.md` is mandatory during Phase 2 verification to record verbatim test evidence mapped to requirement IDs.
+- **Human Approval Authority Boundary**:
+  - Transitioning a specification to `Approved`, `In-Progress`, or `Active` in `docs/specs/INDEX.md` requires explicit human consent ("Proceed").
+  - Autonomous agents operating in planning mode are strictly forbidden from self-promoting specifications to execution-authorized statuses.
 - **User Execution Constraints != Phase Skips**: Direct instructions describing execution parameters ("update the code but do not recompile", "run in background") specify negative or procedural constraints, NEVER an authorization to bypass Phase 1 (Planning & Specification).
-- **Planning Phase Integration (`/plan`)**:
+- **Planning Phase Integration & Standalone Fallbacks**:
   - When `/grill-me` precedes `/plan`, it establishes `spec.md` and `decisions.md` (the ADR).
   - When `/plan` is invoked, author `design.md` and `tasks.md`. If invoked without `/grill-me`, scaffold `spec.md`, `decisions.md`, and `design.md` together under `docs/specs/<feature-id>/`.
+  - **Standalone Fallback**: If slash commands (`/grill-me`, `/plan`) or external review plugins are absent, agents conduct requirements interviews directly, author the 4-document package under `docs/specs/<feature-id>/`, register it in `docs/specs/INDEX.md` as `Draft` or `Planning`, and prompt the user for explicit "Proceed" confirmation.
   - The ephemeral plan artifact in the brain directory is an operational dashboard derived from in-repo documents. Approving the plan confirms human sign-off on underlying `spec.md`, `decisions.md`, and `design.md`.
   - **Slash Command Precedence**: When `/plan` is invoked, the repository's 5-Document Architecture (`docs/specs/<feature-id>/` and `docs/specs/INDEX.md`) takes strict precedence over any built-in or default IDE plan template (e.g. generic `<PLAN>` artifact guidelines). The Primary Agent MUST author the in-repo specification files first before or concurrently with deriving the ephemeral `implementation_plan.md` artifact dashboard.
   - **No Artifact Chat Redundancy**: Do not dump or re-summarize implementation plan markdown into the chat response; link to the artifact and present key decisions and next steps per `RULE[reasoning-quality]`.
 - **Precedence Order & Invalidation**:
   - `spec.md` > `decisions.md` > `design.md` > `tasks.md`. `verification.md` can invalidate any document, but may never redefine normative requirements in `spec.md`.
-  - When `verification.md` records an assertion break against a `REQ-xxx`, execution immediately halts and routes to Root Cause Diagnosis (Dalio Step 3).
+  - When `verification.md` records an assertion break against a `REQ-xxx`, execution immediately halts and routes to Root Cause Diagnosis.
 - **Requirement ID Traceability**: Every requirement MUST have a stable ID (e.g. `REQ-001`) with testable acceptance criteria in `spec.md`. That ID must be cited in `decisions.md`, `design.md`, `tasks.md`, and `verification.md`. Evidence without an ID is unaccounted activity.
 - **Conflict Resolution**: When documents contradict, STOP work and apply precedence. Propose design adjustments; never silently weaken `spec.md` to match an implementation or test.
 - **Review Input Boundary**: Peer reviews evaluate normative contracts (`spec.md`, `design.md`, `decisions.md`). Operational execution checklists (`tasks.md`, `verification.md`) are excluded from peer review inputs.

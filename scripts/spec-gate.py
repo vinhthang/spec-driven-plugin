@@ -1,26 +1,39 @@
 #!/usr/bin/env python3
 """Mechanical Pre-Tool Spec Gate Hook (REQ-031).
 
-Intercepts invoke_subagent calls to prevent unauthorized code mutations
-when no active, validated specification package exists in docs/specs/.
+Intercepts subagent dispatch and direct file-mutation tools to prevent unauthorized
+code modifications when no active, approved specification package exists in docs/specs/.
 """
 
-import importlib.util
 import json
 import os
 import re
 import sys
+import tempfile
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 
-EXEMPT_ROLES = {"research", "codebase researcher", "diagnostician"}
-EXEMPT_TYPES = {"research", "translate", "evaluate", "refine", "analyze"}
-TRANSLATION_TYPES = {"translate", "evaluate", "refine", "analyze"}
+SUBAGENT_TOOLS = {
+    "invoke_subagent",
+    "default_api:invoke_subagent",
+    "client:invoke_subagent",
+}
+
+FILE_MUTATION_TOOLS = {
+    "write_to_file",
+    "replace_file_content",
+    "multi_replace_file_content",
+    "client:write_to_file",
+    "client:replace_file_content",
+    "client:multi_replace_file_content",
+    "default_api:write_to_file",
+    "default_api:replace_file_content",
+    "default_api:multi_replace_file_content",
+}
 
 MUTATION_KEYWORDS = {
     "implement",
     "modify",
-    "code",
     "compiler",
     "executor",
     "builder",
@@ -29,30 +42,51 @@ MUTATION_KEYWORDS = {
     "replace_file_content",
 }
 
+EXEMPT_ROLES = {"research", "codebase researcher", "diagnostician"}
 
-def load_spec_checker():
+
+def load_spec_checker() -> Tuple[Optional[Any], Optional[str]]:
     sys.path.insert(0, os.path.dirname(__file__))
     try:
         import spec_checker
-        return spec_checker
-    except ImportError:
-        return None
+        return spec_checker, None
+    except Exception as exc:
+        return None, str(exc)
+
+
+def is_allowed_runtime_artifact_path(target_path: Path) -> bool:
+    """Check if path matches known runtime artifact paths outside workspace."""
+    target_str = str(target_path)
+    if ".gemini/antigravity/brain" in target_str or ".gemini/antigravity/scratch" in target_str:
+        return True
+
+    try:
+        tmp_dir = Path(tempfile.gettempdir()).resolve()
+        if target_path.is_relative_to(tmp_dir):
+            return True
+    except (ValueError, RuntimeError):
+        pass
+
+    try:
+        sys_tmp = Path("/tmp").resolve()
+        if target_path.is_relative_to(sys_tmp):
+            return True
+    except (ValueError, RuntimeError):
+        pass
+
+    if target_str.startswith("/tmp") or target_str.startswith("/private/tmp"):
+        return True
+
+    return False
 
 
 def is_exempt_subagent(sa: Dict[str, Any]) -> bool:
     """Check if subagent qualifies for exemption from spec gate."""
     type_name = str(sa.get("TypeName") or "").strip().lower()
     role = str(sa.get("Role") or "").strip().lower()
-    prompt = str(sa.get("Prompt") or "").strip().lower()
 
-    # Read-only research exemption
     if type_name == "research" or role in EXEMPT_ROLES:
         return True
-
-    # Translation pipeline operating on runs/
-    if type_name in TRANSLATION_TYPES:
-        if "runs/" in prompt or "runs\\" in prompt or role in TRANSLATION_TYPES:
-            return True
 
     return False
 
@@ -67,7 +101,8 @@ def is_mutating_subagent(sa: Dict[str, Any]) -> bool:
         return True
 
     for kw in MUTATION_KEYWORDS:
-        if kw in role or kw in prompt:
+        pattern = rf"\b{re.escape(kw)}\b"
+        if re.search(pattern, role, re.IGNORECASE) or re.search(pattern, prompt, re.IGNORECASE):
             return True
 
     return False
@@ -78,51 +113,82 @@ def evaluate_spec_gate(payload: Dict[str, Any]) -> Dict[str, Any]:
     tool_call = payload.get("toolCall", {})
     tool_name = tool_call.get("name", "")
 
-    if tool_name not in ["invoke_subagent", "default_api:invoke_subagent"]:
-        return {"decision": "allow"}
-
-    args = tool_call.get("args", {})
-    subagents = args.get("Subagents", [])
-    if not subagents or not isinstance(subagents, list):
-        return {"decision": "allow"}
-
-    # Check subagents
     requires_gate = False
-    for sa in subagents:
-        if is_exempt_subagent(sa):
-            continue
-        if is_mutating_subagent(sa):
+
+    if tool_name in SUBAGENT_TOOLS:
+        args = tool_call.get("args", {})
+        subagents = args.get("Subagents", [])
+        if not subagents or not isinstance(subagents, list):
+            return {"decision": "allow"}
+
+        for sa in subagents:
+            if is_mutating_subagent(sa):
+                requires_gate = True
+                break
+            if is_exempt_subagent(sa):
+                continue
             requires_gate = True
             break
-        # Default fail-closed for non-exempt subagents
-        requires_gate = True
-        break
 
-    if not requires_gate:
+        if not requires_gate:
+            return {"decision": "allow"}
+
+    elif tool_name in FILE_MUTATION_TOOLS:
+        args = tool_call.get("args", {})
+        raw_path = (
+            args.get("TargetFile")
+            or args.get("target_file")
+            or args.get("file_path")
+            or args.get("path")
+        )
+        if not raw_path or not str(raw_path).strip():
+            return {
+                "decision": "deny",
+                "reason": "Spec Gate Rejection: Missing target file path in mutation tool call",
+            }
+
+        workspace_root = payload.get("cwd") or os.environ.get("AGY_ACTIVE_WORKSPACE") or os.getcwd()
+        workspace_path = Path(workspace_root).resolve()
+
+        target = Path(raw_path)
+        if not target.is_absolute():
+            target = workspace_path / target
+        resolved_target = target.resolve()
+
+        # If outside workspace_root (e.g. runtime brain artifacts), only allow recognized artifact paths
+        if not resolved_target.is_relative_to(workspace_path):
+            if is_allowed_runtime_artifact_path(resolved_target):
+                return {"decision": "allow"}
+            return {
+                "decision": "deny",
+                "reason": f"Spec Gate Rejection: File mutation target '{resolved_target}' is outside workspace root and not a recognized runtime artifact path",
+            }
+
+        # If inside docs/specs/, allow unconditionally for specification authoring
+        if resolved_target.is_relative_to(workspace_path / "docs" / "specs"):
+            return {"decision": "allow"}
+
+        requires_gate = True
+    else:
         return {"decision": "allow"}
 
-    # Resolve workspace root
+    # Evaluate specification status
     workspace_root = payload.get("cwd") or os.environ.get("AGY_ACTIVE_WORKSPACE") or os.getcwd()
+    checker, err = load_spec_checker()
+    if not checker:
+        return {
+            "decision": "deny",
+            "reason": f"Spec Gate Rejection: Failed to load spec_checker verification engine: {err}",
+        }
 
-    checker = load_spec_checker()
-    if checker:
-        result = checker.verify_active_specification(workspace_root)
-    else:
-        # Fallback inspection if module not importable
-        specs_dir = Path(workspace_root) / "docs" / "specs"
-        if not specs_dir.exists():
-            result = {"status": "no_spec_framework", "valid": True}
-        elif not (specs_dir / "INDEX.md").exists():
-            result = {"status": "invalid", "valid": False, "reason": "Missing docs/specs/INDEX.md"}
-        else:
-            result = {"status": "no_active_spec", "valid": False, "reason": "No active specification found in docs/specs/INDEX.md"}
+    result = checker.verify_active_specification(workspace_root, require_approved=True)
 
     if not result.get("valid"):
         reason_detail = result.get("reason", "No active specification found.")
         return {
             "decision": "deny",
             "reason": (
-                f"Spec Gate Rejection: Cannot dispatch execution subagent.\n"
+                f"Spec Gate Rejection: Cannot dispatch execution subagent or mutate code.\n"
                 f"{reason_detail}\n"
                 f"Scaffold docs/specs/<feature-id>/, register in INDEX.md, and secure explicit approval ('Proceed') before code implementation."
             ),
@@ -140,15 +206,12 @@ def main(argv=None, stdin=None, stdout=None):
         stdout = sys.stdout
 
     def emit(data):
-        if os.environ.get("AGY_ATTENTION_GUARD_OBSERVATION_MODE") == "1":
-            stdout.write(json.dumps({"decision": "allow"}) + "\n")
-        else:
-            stdout.write(json.dumps(data) + "\n")
+        stdout.write(json.dumps(data) + "\n")
 
     try:
         raw = stdin.read()
         if not raw or not raw.strip():
-            emit({"decision": "allow"})
+            emit({"decision": "deny", "reason": "Spec Gate Rejection: Empty payload on stdin"})
             return
 
         payload = json.loads(raw)
