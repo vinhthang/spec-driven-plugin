@@ -1,0 +1,89 @@
+{
+  "spec_hash": "3adfce3009393b962b74791a77184d37f7ad568830ff20bbe574b4d656542003",
+  "evidence_hash": "74e73bd7be3e55311e7f1f9ec57f7e3ba3ade9bf37b53b28c38e77e8443b2658",
+  "auditor_model": "claude-opus-4-6",
+  "verdict": "PASS",
+  "requirements_evaluated": {
+    "REQ-009": {
+      "design_aligned": true,
+      "design_rationale": "Section 1.1 and 1.2 define parse_specs_index_text() and resolve_package_dir().",
+      "tasks_actionable": true,
+      "tasks_rationale": "Task 1 implements parse_specs_index_text() and resolve_package_dir() in scripts/spec_checker.py.",
+      "decisions_consistent": true,
+      "evidence_verified": true,
+      "evidence_rationale": "verification.md confirms test_parse_specs_index_text and test_resolve_package_dir passed."
+    },
+    "REQ-010": {
+      "design_aligned": true,
+      "design_rationale": "Section 2.1 specifies unified table parsing and fail-closed partial replacement check in spec-gate.py.",
+      "tasks_actionable": true,
+      "tasks_rationale": "Task 2 details updating is_unauthorized_status_promotion() to delegate parsing to checker.parse_specs_index_text().",
+      "decisions_consistent": true,
+      "evidence_verified": true,
+      "evidence_rationale": "verification.md confirms 4 test assertions passed covering status promotion and partial replacement."
+    },
+    "REQ-011": {
+      "design_aligned": true,
+      "design_rationale": "Section 3.1 details contiguous component matching for runtime artifact paths in is_allowed_runtime_artifact_path().",
+      "tasks_actionable": true,
+      "tasks_rationale": "Task 2 updates is_allowed_runtime_artifact_path() with path component validation.",
+      "decisions_consistent": true,
+      "evidence_verified": true,
+      "evidence_rationale": "verification.md confirms test_is_allowed_runtime_artifact_path_spoofing passed."
+    },
+    "REQ-012": {
+      "design_aligned": true,
+      "design_rationale": "Design specifies regression and edge-case unit tests in tests/test_spec_checker.py and tests/test_spec_gate.py.",
+      "tasks_actionable": true,
+      "tasks_rationale": "Task 3 lists test additions and verbatim evidence capture in verification.md.",
+      "decisions_consistent": true,
+      "evidence_verified": true,
+      "evidence_rationale": "verification.md records 48 passing unit tests and spec_checker --verify-evidence passing."
+    },
+    "REQ-013": {
+      "design_aligned": true,
+      "design_rationale": "Section 1.2 defines single dictionary-based resolve_package_dir signature without parameter shifting.",
+      "tasks_actionable": true,
+      "tasks_rationale": "Task 4 removes positional shifting and synchronizes byte-for-byte to ai-review-plugin.",
+      "decisions_consistent": true,
+      "evidence_verified": true,
+      "evidence_rationale": "verification.md records byte-for-byte verification with cmp."
+    },
+    "REQ-014": {
+      "design_aligned": true,
+      "design_rationale": "Section 4.1 and 4.2 define inner hooks.json schema, workspacePaths resolution, and transcript-backed approval.",
+      "tasks_actionable": true,
+      "tasks_rationale": "Task 5 fixes hooks.json and implements resolve_target_workspace() and has_recent_user_approval().",
+      "decisions_consistent": true,
+      "evidence_verified": true,
+      "evidence_rationale": "verification.md confirms 4 unit tests covering hooks.json schema and approval resolution passed."
+    },
+    "REQ-015": {
+      "design_aligned": true,
+      "design_rationale": "Design details modularizing tests into test_spec_gate_security.py keeping all files under 450 lines.",
+      "tasks_actionable": true,
+      "tasks_rationale": "Task 6 executes the file split and verifies line-count constraints.",
+      "decisions_consistent": true,
+      "evidence_verified": true,
+      "evidence_rationale": "verification.md records wc -l output showing all files strictly under 450 lines."
+    },
+    "REQ-016": {
+      "design_aligned": true,
+      "design_rationale": "Section 5.1 and 5.2 define SHA-256 package hashing and Opus semantic traceability verification in semantic_checker.py.",
+      "tasks_actionable": true,
+      "tasks_rationale": "Task 7 implements compute_spec_package_hash() and validate_semantic_traceability() with --semantic CLI flag.",
+      "decisions_consistent": true,
+      "evidence_verified": true,
+      "evidence_rationale": "verification.md records passing unit tests for compute_spec_package_hash and validate_semantic_traceability_receipt."
+    },
+    "REQ-017": {
+      "design_aligned": true,
+      "design_rationale": "Section 5.2 specifies traceability-auditor subagent governance, blocking flash models, and approval receipt gate.",
+      "tasks_actionable": true,
+      "tasks_rationale": "Task 8 creates agents/traceability-auditor.md and integrates semantic receipt verification into spec-gate.py.",
+      "decisions_consistent": true,
+      "evidence_verified": true,
+      "evidence_rationale": "verification.md confirms test_traceability_auditor_model_enforcement and test_index_promotion_requires_semantic_traceability_receipt passed."
+    }
+  }
+}
