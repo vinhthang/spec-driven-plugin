@@ -31,8 +31,8 @@ Intercepts `invoke_subagent`, `write_to_file`, `replace_file_content`, and `mult
 - **Specification Authoring Exemption**: Allows creating and editing files under `docs/specs/` during Phase 1 planning.
 - **Anti-Self-Approval & Semantic Promotion Gate**: Blocks promoting a feature to `Approved`, `In-Progress`, or `Active` in `docs/specs/INDEX.md` unless:
   1. Explicit human approval (`"Proceed"` / `"Approved"`) is recorded in the latest `USER_INPUT` step of `transcriptPath` (or `SPEC_GATE_ALLOW_APPROVAL=1`), **and**
-  2. `<package_dir>/traceability_audit.json` passes `validate_semantic_traceability()` with an Opus/high-reasoning auditor model (`flash` is mechanically rejected).
-- **Subagent Model Guard**: Allows `traceability-auditor` (`TypeName="traceability-auditor"`) to run during Phase 1 planning, but denies dispatch if `Model` is set to `"flash"` or `"flash_lite"`.
+  2. `<package_dir>/traceability_audit.json` passes `validate_semantic_traceability()` with a high-reasoning auditor model (Opus-class or Gemini 3.8 Flash High; Flash tiers below High are mechanically rejected, per ADR-012).
+- **Subagent Model Guard**: Allows `traceability-auditor` (`TypeName="traceability-auditor"`) to run during Phase 1 planning, but denies dispatch if `Model` names a Flash tier below High (`"flash"`, `"flash_lite"`, `*-flash-medium`, `*-flash-low`).
 
 ### 2. Specification & Semantic Checker (`scripts/spec_checker.py` & `scripts/semantic_checker.py`)
 ```bash

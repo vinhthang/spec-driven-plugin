@@ -386,15 +386,21 @@ class TestSpecGateSecurity(unittest.TestCase):
             self.assertIn("is outside workspace root and not a recognized runtime artifact path", decision.get("reason", ""))
 
     def test_traceability_auditor_model_enforcement(self):
-        """Traceability auditor subagent is denied with flash/flash_lite but allowed with pro/inherit."""
+        """Traceability auditor subagent is denied with sub-High Flash tiers but allowed with pro/inherit and Flash High (ADR-012)."""
         self._setup_valid_approved_spec()
         call_args = lambda m: {"Subagents": [{"TypeName": "traceability-auditor", "Model": m, "Role": "Auditor", "Prompt": "Audit"}]}
         res_flash = evaluate_spec_gate({"cwd": str(self.workspace), "toolCall": {"name": "invoke_subagent", "args": call_args("flash")}})
         self.assertEqual(res_flash.get("decision"), "deny")
-        self.assertIn("Traceability auditor subagent must use Opus", res_flash.get("reason", ""))
+        self.assertIn("must use a high-reasoning model", res_flash.get("reason", ""))
+
+        res_medium = evaluate_spec_gate({"cwd": str(self.workspace), "toolCall": {"name": "invoke_subagent", "args": call_args("gemini-3.8-flash-medium")}})
+        self.assertEqual(res_medium.get("decision"), "deny")
 
         res_pro = evaluate_spec_gate({"cwd": str(self.workspace), "toolCall": {"name": "invoke_subagent", "args": call_args("pro")}})
         self.assertEqual(res_pro.get("decision"), "allow")
+
+        res_flash_high = evaluate_spec_gate({"cwd": str(self.workspace), "toolCall": {"name": "invoke_subagent", "args": call_args("gemini-3.8-flash-high")}})
+        self.assertEqual(res_flash_high.get("decision"), "allow")
 
     def test_index_promotion_requires_semantic_traceability_receipt(self):
         """Promoting to Approved when pkg_dir exists requires valid Opus traceability_audit.json receipt."""

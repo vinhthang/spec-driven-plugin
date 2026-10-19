@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Semantic Traceability Verification Engine (REQ-016).
 
-Validates that an Opus/high-reasoning model has semantically audited the 5-document
+Validates that a high-reasoning model has semantically audited the 5-document
 specification package and produced a valid, content-hashed traceability_audit.json receipt.
 """
 
@@ -37,15 +37,30 @@ def compute_spec_package_hash(
     return hasher.hexdigest()
 
 
+def is_accepted_auditor_model(model: str) -> bool:
+    """Tier-aware auditor policy (amended 2026-10-19, operator decision; ADR-012).
+
+    Approved auditors are high-reasoning models: Opus-class models and
+    Gemini 3.8 Flash (High). Flash tiers below High (bare ``flash``,
+    ``flash_lite``, ``*-flash-medium``, ``*-flash-low``) are rejected so cheap
+    tiers cannot rubber-stamp a specification: a model name containing
+    ``flash`` is accepted only when it also contains ``high``.
+    """
+    name = (model or "").strip().lower()
+    if not name:
+        return False
+    return "flash" not in name or "high" in name
+
+
 def run_cli_semantic_audit(
     package_dir: Path,
     spec_reqs: List[str],
     verify_evidence: bool = False,
 ) -> Tuple[bool, str]:
     """Execute external CLI agent to audit semantic traceability and write receipt."""
-    model = os.environ.get("SPEC_CHECKER_AGENT_MODEL", "claude-opus-4-6").strip()
-    if not model or "flash" in model.lower():
-        return False, f"Semantic traceability audit model cannot be flash: '{model}'"
+    model = os.environ.get("SPEC_CHECKER_AGENT_MODEL", "gemini-3.8-flash-high").strip()
+    if not is_accepted_auditor_model(model):
+        return False, f"Semantic traceability audit model must be a high-reasoning model; Flash tiers below High are not accepted: '{model}'"
 
     custom_cmd = os.environ.get("SPEC_CHECKER_AGENT_CMD")
     prompt = (
@@ -116,10 +131,10 @@ def validate_semantic_traceability(
         return False, f"{audit_path.name} must be a JSON object"
 
     auditor_model = str(data.get("auditor_model") or "").strip()
-    if not auditor_model or "flash" in auditor_model.lower():
+    if not is_accepted_auditor_model(auditor_model):
         return (
             False,
-            f"Semantic traceability audit must use an Opus/high-reasoning model, not flash (got '{auditor_model}')",
+            f"Semantic traceability audit must use a high-reasoning model; Flash tiers below High are not accepted (got '{auditor_model}')",
         )
 
     if str(data.get("verdict") or "").strip().upper() != "PASS":

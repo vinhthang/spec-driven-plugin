@@ -161,3 +161,16 @@ However, looking at the two repositories critically through the lens of **simpli
 2. **Split `audit._main()` and `spec_checker.verify_active_specification()`** into focused 40–60 line helper functions so all files stay well under the 500-line AST gate threshold.
 3. **Unify `INDEX.md` table parsing** into `spec_checker.parse_specs_index_text()` and reuse it in `spec-gate.py` and `governance.py`.
 4. **Tighten `spec-gate.py`** runtime artifact path check to use `Path.is_relative_to()` instead of substring `in`, and reject partial-row status replacements on `INDEX.md`.
+
+---
+
+## 6. Verification Addendum (2026-10-19, by Muse)
+
+The figures in §1–§3 predate the `2026-10-19-simplification-and-deduplication` feature and no longer describe this repository. Measured on the current tree (test suite and checker re-run at addendum time):
+
+- **Tests**: 48/48 passing under `unittest` (not 34/34).
+- **`spec_checker.py`**: 424 lines (not 489). Finding 2's main recommendation for this file is **done**: `resolve_package_dir()` was extracted (L204), and `verify_active_specification()` is now 117 lines (L249–L365), not 238.
+- **Finding 3 (parser unification)**: `parse_specs_index_text()` now exists in `spec_checker.py` (L69) and `parse_specs_index()` delegates to it. Whether `spec-gate.py` and `ai-review-plugin`'s `governance.py` consume it was not re-audited here.
+- **Semantic layer**: the review predates Phase 3 — `scripts/semantic_checker.py` (196 lines) now validates `traceability_audit.json` receipts, and `scripts/spec-gate.py` is 443 lines. The repository passes its own checker with `--verify-evidence` over both spec packages.
+- **Auditor model policy (ADR-012, uncommitted in this clone)**: the blanket flash-model rejection described in the Phase 3 design was amended on the operator's decision (2026-10-19, Claude models leaving Antigravity) to a tier-aware rule — a model name containing `flash` is an accepted auditor only when it also contains `high`. See `docs/specs/2026-10-19-simplification-and-deduplication/decisions.md`, ADR-012.
+- Figures quoted for `ai-review-plugin` (136/136 tests, file sizes) are as originally reported and were **not** re-verified in this addendum.

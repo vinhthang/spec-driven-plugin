@@ -419,12 +419,25 @@ class TestSpecChecker(unittest.TestCase):
         audit_file.write_text(json.dumps(audit), encoding="utf-8")
         ok, err = spec_checker.validate_semantic_traceability(pkg)
         self.assertFalse(ok)
-        self.assertIn("not flash", err)
+        self.assertIn("below High", err)
 
         audit["auditor_model"] = "claude-opus-4-6"
         audit_file.write_text(json.dumps(audit), encoding="utf-8")
         self.assertTrue(spec_checker.validate_semantic_traceability(pkg)[0])
 
+        # Tier-aware policy (ADR-012): Gemini Flash High is an approved auditor,
+        # while Flash tiers below High remain rejected.
+        audit["auditor_model"] = "gemini-3.8-flash-high"
+        audit_file.write_text(json.dumps(audit), encoding="utf-8")
+        self.assertTrue(spec_checker.validate_semantic_traceability(pkg)[0])
+
+        audit["auditor_model"] = "gemini-3.8-flash-medium"
+        audit_file.write_text(json.dumps(audit), encoding="utf-8")
+        ok, err = spec_checker.validate_semantic_traceability(pkg)
+        self.assertFalse(ok)
+        self.assertIn("below High", err)
+
+        audit["auditor_model"] = "claude-opus-4-6"
         audit["spec_hash"] = "0" * 64
         audit_file.write_text(json.dumps(audit), encoding="utf-8")
         ok, err = spec_checker.validate_semantic_traceability(pkg)

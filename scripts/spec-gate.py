@@ -290,10 +290,13 @@ def evaluate_spec_gate(payload: Dict[str, Any]) -> Dict[str, Any]:
             type_name = str(sa.get("TypeName") or "").strip().lower()
             role = str(sa.get("Role") or "").strip().lower()
             if type_name == "traceability-auditor" or "traceability" in role:
-                if str(sa.get("Model") or "").strip().lower() in ("flash", "flash_lite"):
+                sa_model = str(sa.get("Model") or "").strip().lower()
+                # Tier-aware auditor policy (ADR-012): reject Flash tiers below
+                # High; Opus-class and Gemini Flash High are approved auditors.
+                if "flash" in sa_model and "high" not in sa_model:
                     return {
                         "decision": "deny",
-                        "reason": "Spec Gate Rejection: Traceability auditor subagent must use Opus ('pro' or 'inherit'), never 'flash'.",
+                        "reason": "Spec Gate Rejection: Traceability auditor subagent must use a high-reasoning model (Opus-class or Gemini Flash High); Flash tiers below High are not accepted.",
                     }
 
         requires_gate = False
