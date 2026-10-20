@@ -33,6 +33,7 @@ Intercepts `invoke_subagent`, `write_to_file`, `replace_file_content`, and `mult
   1. Explicit human approval (`"Proceed"` / `"Approved"`) is recorded in the latest `USER_INPUT` step of `transcriptPath` (or `SPEC_GATE_ALLOW_APPROVAL=1`), **and**
   2. `<package_dir>/traceability_audit.json` passes `validate_semantic_traceability()` with a high-reasoning auditor model (Opus-class or Gemini 3.8 Flash High; Flash tiers below High are mechanically rejected, per ADR-012).
 - **Subagent Model Guard**: Allows `traceability-auditor` (`TypeName="traceability-auditor"`) to run during Phase 1 planning, but denies dispatch if `Model` names a Flash tier below High (`"flash"`, `"flash_lite"`, `*-flash-medium`, `*-flash-low`).
+- **Global Configuration Path Allowance (`REQ-026`)**: `spec-gate.py` permits `~/.gemini/config/{rules,scripts,skills,hooks.json}` paths per `RULE[workspace-boundary]`.
 
 ### 2. Specification & Semantic Checker (`scripts/spec_checker.py` & `scripts/semantic_checker.py`)
 ```bash
@@ -41,11 +42,13 @@ python3 scripts/spec_checker.py --workspace . [--feature <id>] [--allow-planning
 - `--allow-planning`: Accepts `Draft`, `Planning`, and `Review` statuses during Phase 1.
 - `--verify-evidence`: Requires `verification.md` and validates `evidence_hash` in `traceability_audit.json` when present.
 - `--semantic`: Enforces `validate_semantic_traceability()` (and invokes the configured CLI agent if `traceability_audit.json` is missing).
+- **Referenced Artifact Existence & Compilation Gate (`REQ-024`)**: `--verify-evidence` runs `check_referenced_artifacts()` to verify every relative `scripts/*.py` and `tests/*.py` path cited in `verification.md` exists on disk and passes `compile()`.
+- **Domain-Prefixed Requirement IDs (`REQ-025`)**: `REQ_ID_PATTERN` supports both `REQ-001` and domain-prefixed IDs (`REQ-AE-001`, `REQ-DSL-001`, `REQ-TOC-1`, `REQ-MOD-EVAL-1`, `REQ-2STG-1`).
 
 ### 3. Rules, Skills & Agents
 - [`rules/spec-standard.md`](rules/spec-standard.md): Authoritative `spec-standard` governance rule.
 - [`skills/spec-standard/SKILL.md`](skills/spec-standard/SKILL.md): Templates and scaling switches for the 5-Document Architecture.
-- [`agents/traceability-auditor.md`](agents/traceability-auditor.md): Opus-tier (`model_role: strongest`) subagent that audits specification packages and writes `traceability_audit.json`.
+- [`agents/traceability-auditor.md`](agents/traceability-auditor.md): Opus-tier (`model_role: strongest`) subagent that audits specification packages and writes `traceability_audit.json`. Declares `tools: [read_file, view_file, write_file, write_to_file]` (`REQ-023`).
 
 ---
 

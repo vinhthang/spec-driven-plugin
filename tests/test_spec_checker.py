@@ -44,11 +44,15 @@ class TestSpecChecker(unittest.TestCase):
             self.assertEqual(spec_checker.normalize_status(raw), expected)
 
     def test_extract_requirement_ids(self):
-        """Test requirement ID extraction excludes placeholders like REQ-xxx/REQ-XXX."""
-        reqs = spec_checker.extract_requirement_ids("Normative: REQ-001, REQ-002, FLOW-010, ALIGN-100, and placeholder REQ-xxx and REQ-XXX.")
-        self.assertEqual(reqs, ["ALIGN-100", "FLOW-010", "REQ-001", "REQ-002"])
+        """Test requirement ID extraction supports domain-prefixed IDs (REQ-025) and excludes placeholders."""
+        text = "Normative: REQ-001, REQ-AE-001, REQ-DSL-001, REQ-TOC-1, REQ-MOD-EVAL-1, REQ-2STG-1, FLOW-010, ALIGN-100, placeholders REQ-xxx, REQ-XXX."
+        reqs = spec_checker.extract_requirement_ids(text)
+        expected = ["ALIGN-100", "FLOW-010", "REQ-001", "REQ-2STG-1", "REQ-AE-001", "REQ-DSL-001", "REQ-MOD-EVAL-1", "REQ-TOC-1"]
+        self.assertEqual(reqs, expected)
         self.assertNotIn("REQ-xxx", reqs)
         self.assertNotIn("REQ-XXX", reqs)
+        decl_text = "### `REQ-AE-001`: Anti-Convert\n- `REQ-DSL-001`: DSL\nProse with REQ-001\n"
+        self.assertEqual(spec_checker.extract_declared_requirement_ids(decl_text), ["REQ-AE-001", "REQ-DSL-001"])
 
     def test_parse_specs_index_escaped_pipes(self):
         """Test parsing markdown table in INDEX.md with escaped pipes in cell content."""
@@ -448,6 +452,59 @@ class TestSpecChecker(unittest.TestCase):
         audit["requirements_evaluated"]["REQ-001"]["design_rationale"] = ""
         audit_file.write_text(json.dumps(audit), encoding="utf-8")
         self.assertFalse(spec_checker.validate_semantic_traceability(pkg)[0])
+
+    def test_traceability_auditor_agent_tools_declaration(self):
+        """Test REQ-023: traceability-auditor.md declares read and write tools."""
+        auditor_md = Path(__file__).resolve().parent.parent / "agents" / "traceability-auditor.md"
+        self.assertTrue(auditor_md.is_file())
+        content = auditor_md.read_text(encoding="utf-8")
+        self.assertIn("tools: [read_file, view_file, write_file, write_to_file]", content)
+        self.assertIn("write_file` or `write_to_file", content)
+
+    def test_check_referenced_artifacts(self):
+        """Test REQ-024: check_referenced_artifacts on valid, missing, and syntax error scripts."""
+        specs_dir = self.workspace / "docs" / "specs"
+        feat_dir = specs_dir / "feat-art"
+        self._create_valid_package(feat_dir, ("REQ-001",))
+
+        # 1. Valid script and test references
+        scripts_dir, tests_dir = self.workspace / "scripts", self.workspace / "tests"
+        scripts_dir.mkdir(parents=True); tests_dir.mkdir(parents=True)
+        (scripts_dir / "tool.py").write_text("print('ok')\n", encoding="utf-8")
+        (tests_dir / "test_tool.py").write_text("def test_ok(): return True\n", encoding="utf-8")
+
+        verif_file = feat_dir / "verification.md"
+        verif_file.write_text(
+            "# Verif\n- REQ-001 passed\n- Ran `scripts/tool.py` and `tests/test_tool.py`\n",
+            encoding="utf-8",
+        )
+        self.assertEqual(spec_checker.check_referenced_artifacts(feat_dir), [])
+
+        # 2. Missing referenced script
+        verif_file.write_text(
+            "# Verif\n- REQ-001 passed\n- Ran `scripts/nonexistent.py`\n",
+            encoding="utf-8",
+        )
+        errors_missing = spec_checker.check_referenced_artifacts(feat_dir)
+        self.assertEqual(len(errors_missing), 1)
+        self.assertIn("not found in workspace", errors_missing[0])
+        self.assertIn("scripts/nonexistent.py", errors_missing[0])
+
+        # 3. Broken syntax in referenced script
+        (scripts_dir / "broken.py").write_text("def broken(:\n    return False\n", encoding="utf-8")
+        verif_file.write_text(
+            "# Verif\n- REQ-001 passed\n- Ran `scripts/broken.py`\n",
+            encoding="utf-8",
+        )
+        errors_syntax = spec_checker.check_referenced_artifacts(feat_dir)
+        self.assertEqual(len(errors_syntax), 1)
+        self.assertIn("syntax error", errors_syntax[0])
+        self.assertIn("scripts/broken.py", errors_syntax[0])
+
+        # 4. validate_spec_package integration when verify_evidence=True
+        ok, err = spec_checker.validate_spec_package(feat_dir, verify_evidence=True)
+        self.assertFalse(ok)
+        self.assertIn("syntax error", err)
 
 
 if __name__ == "__main__":

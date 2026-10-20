@@ -25,9 +25,11 @@ except ImportError:
         validate_semantic_traceability,
     )
 
-REQ_PATTERN = re.compile(r"\b(REQ-\d+|FLOW-\d+|ALIGN-\d+)\b")
+REQ_ID_PATTERN = re.compile(r"\b(?:REQ|FLOW|ALIGN)-(?:[A-Z0-9]+-)*\d+\b")
+REQ_PATTERN = REQ_ID_PATTERN
 PLACEHOLDER_REQS = {"REQ-XXX", "REQ-xxx"}
 ADR_PATTERN = re.compile(r"\bADR-\d+\b")
+ARTIFACT_REF_RE = re.compile(r'(?<![/\w.-])((?:scripts|tests)/[A-Za-z0-9_.\-/]+\.py)\b')
 
 PLANNING_STATUSES = {"draft", "planning", "review"}
 EXECUTION_STATUSES = {"approved", "in-progress", "active"}
@@ -36,7 +38,7 @@ TERMINAL_STATUSES = VERIFIABLE_TERMINAL_STATUSES | {"abandoned", "superseded"}
 ACTIVE_STATUSES = EXECUTION_STATUSES | PLANNING_STATUSES
 
 DECLARED_REQ_LINE_PATTERN = re.compile(
-    r"^(?:\s*#{1,6}\s+.*?|\s*[-*+]\s+(?:\*\*|`)*|\s*\|\s*`?)\b(REQ-\d+|FLOW-\d+|ALIGN-\d+)\b",
+    r"^(?:\s*#{1,6}\s+.*?|\s*[-*+]\s+(?:\*\*|`)*|\s*\|\s*`?)\b((?:REQ|FLOW|ALIGN)-(?:[A-Z0-9]+-)*\d+)\b",
     re.MULTILINE,
 )
 
@@ -130,11 +132,62 @@ def get_active_specifications(records: List[Dict[str, str]]) -> List[Dict[str, s
     return [r for r in records if normalize_status(r.get("status", "")) in ACTIVE_STATUSES]
 
 
+def check_referenced_artifacts(
+    spec_dir: Union[Path, str],
+    repo_root: Optional[Union[Path, str]] = None,
+) -> List[str]:
+    """Scan verification.md for relative scripts/ or tests/ Python file references.
+
+    Verifies that each unique relative path exists in repo_root and passes compilation.
+    When repo_root is None, infers spec_dir.parent.parent.parent if spec_dir is under docs/specs/.
+    Returns a list of actionable error strings on missing files or syntax errors.
+    """
+    s_dir = Path(spec_dir).resolve()
+    verif_file = s_dir / "verification.md"
+    if not verif_file.is_file():
+        return []
+
+    root: Optional[Path] = Path(repo_root).resolve() if repo_root is not None else None
+    if root is None:
+        if s_dir.parent.name == "specs" and s_dir.parent.parent.name == "docs":
+            root = s_dir.parent.parent.parent
+
+    if root is None:
+        return []
+
+    content = verif_file.read_text(encoding="utf-8")
+    matches = sorted(set(ARTIFACT_REF_RE.findall(content)))
+    errors: List[str] = []
+
+    for rel_path in matches:
+        target = root / rel_path
+        if not target.is_file():
+            errors.append(
+                f"Referenced artifact '{rel_path}' cited in verification.md not found in workspace: {target}"
+            )
+            continue
+
+        try:
+            src = target.read_text(encoding="utf-8")
+            compile(src, rel_path, "exec")
+        except SyntaxError as exc:
+            errors.append(
+                f"Referenced artifact '{rel_path}' cited in verification.md has syntax error at line {exc.lineno}: {exc.msg}"
+            )
+        except Exception as exc:
+            errors.append(
+                f"Failed to compile referenced artifact '{rel_path}' cited in verification.md: {exc}"
+            )
+
+    return errors
+
+
 def validate_spec_package(
     package_dir: Union[Path, str],
     verify_evidence: bool = False,
     require_semantic: bool = False,
     run_semantic_agent: bool = False,
+    repo_root: Optional[Union[Path, str]] = None,
 ) -> Tuple[bool, str]:
     """Check that spec.md, decisions.md, design.md, and tasks.md exist and contain non-whitespace text.
 
@@ -187,6 +240,11 @@ def validate_spec_package(
     has_spec_req = any(r in decisions_reqs for r in spec_reqs)
     if not has_adr and not has_spec_req:
         return False, "decisions.md must contain at least one ADR-\\d+ or declared requirement ID"
+
+    if verify_evidence and (pkg / "verification.md").is_file():
+        artifact_errors = check_referenced_artifacts(pkg, repo_root=repo_root)
+        if artifact_errors:
+            return False, "; ".join(artifact_errors)
 
     if require_semantic or run_semantic_agent or (pkg / "traceability_audit.json").is_file():
         sem_ok, sem_err = validate_semantic_traceability(
@@ -325,6 +383,7 @@ def verify_active_specification(
             verify_evidence=effective_verify_evidence,
             require_semantic=require_semantic,
             run_semantic_agent=run_semantic_agent,
+            repo_root=root,
         )
         if not is_valid:
             err_dict = {"status": "incomplete_package", "valid": False, "feature_id": feat_id, "reason": err}

@@ -41,10 +41,21 @@ def is_allowed_runtime_artifact_path(target_path: Path) -> bool:
     """Check if path has contiguous (.gemini, antigravity, brain|scratch) parts or matches AGY_RUNTIME_ARTIFACT_DIR."""
     resolved = target_path.resolve()
     parts = resolved.parts
-    valid_prefixes = {(".gemini", "antigravity", "brain"), (".gemini", "antigravity", "scratch")}
+    valid_prefixes = {
+        (".gemini", "antigravity", "brain"),
+        (".gemini", "antigravity", "scratch"),
+        (".gemini", "config", "rules"),
+        (".gemini", "config", "scripts"),
+        (".gemini", "config", "skills"),
+    }
     for i in range(len(parts) - 2):
         if parts[i:i + 3] in valid_prefixes:
             return True
+
+    if resolved.name == "hooks.json":
+        for i in range(len(parts) - 1):
+            if parts[i:i + 2] == (".gemini", "config"):
+                return True
 
     custom_artifact_dir = os.environ.get("AGY_RUNTIME_ARTIFACT_DIR")
     if custom_artifact_dir and custom_artifact_dir.strip():

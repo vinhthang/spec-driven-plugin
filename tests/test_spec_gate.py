@@ -385,6 +385,16 @@ class TestSpecGate(unittest.TestCase):
             self.assertEqual(decision.get("decision"), "deny")
             self.assertIn("Failed to load spec_checker verification engine: Mock import failure", decision.get("reason", ""))
 
+    def test_is_allowed_runtime_artifact_path_gemini_config(self):
+        """Test REQ-026: ~/.gemini/config/ rules, scripts, skills, and hooks.json are allowed."""
+        base = Path("/Users/thanghoang/.gemini/config")
+        self.assertTrue(is_allowed_runtime_artifact_path(base / "rules" / "tdd.md"))
+        self.assertTrue(is_allowed_runtime_artifact_path(base / "scripts" / "ast-gate.py"))
+        self.assertTrue(is_allowed_runtime_artifact_path(base / "skills" / "my-skill" / "SKILL.md"))
+        self.assertTrue(is_allowed_runtime_artifact_path(base / "hooks.json"))
+        self.assertFalse(is_allowed_runtime_artifact_path(Path("/Users/thanghoang/src/app.py")))
+        self.assertFalse(is_allowed_runtime_artifact_path(base / "other" / "file.txt"))
+
 
 if __name__ == "__main__":
     unittest.main()
