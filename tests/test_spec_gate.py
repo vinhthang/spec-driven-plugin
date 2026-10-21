@@ -4,6 +4,7 @@
 import importlib.util
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -443,6 +444,16 @@ class TestSpecGate(unittest.TestCase):
             },
         }
         self.assertEqual(evaluate_spec_gate(payload_flat_sa).get("decision"), "allow")
+
+    def test_req027_hooks_json_matcher_matches_antigravity2_tools(self):
+        """REQ-027: hooks.json matcher covers write_file, edit_file, and prefixes."""
+        hooks_json_path = SCRIPTS_DIR.parent / "hooks.json"
+        self.assertTrue(hooks_json_path.exists())
+        data = json.loads(hooks_json_path.read_text(encoding="utf-8"))
+        matcher_pattern = data["spec-gate-plugin"]["PreToolUse"][0]["matcher"]
+        regex = re.compile(matcher_pattern)
+        for tool in ["write_file", "edit_file", "default_api:write_file", "default_api:edit_file", "client:write_file", "client:edit_file"]:
+            self.assertIsNotNone(regex.match(tool), f"Matcher should match {tool}")
 
 
 if __name__ == "__main__":
