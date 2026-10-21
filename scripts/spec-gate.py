@@ -19,6 +19,8 @@ FILE_MUTATION_TOOLS = {
     "write_to_file", "replace_file_content", "multi_replace_file_content",
     "client:write_to_file", "client:replace_file_content", "client:multi_replace_file_content",
     "default_api:write_to_file", "default_api:replace_file_content", "default_api:multi_replace_file_content",
+    "write_file", "default_api:write_file", "client:write_file",
+    "edit_file", "default_api:edit_file", "client:edit_file",
 }
 
 MUTATION_KEYWORDS = {
@@ -119,7 +121,7 @@ def resolve_target_workspace(resolved_target: Path, candidate_workspaces: List[P
 
 
 def has_recent_user_approval(payload: Dict[str, Any]) -> bool:
-    """Inspect transcriptPath for explicit user approval (Proceed/Approved) in the latest user turn."""
+    """Inspect transcriptPath for explicit user approval (Proceed/Approved) or active /goal session."""
     transcript_path_str = payload.get("transcriptPath", "")
     if not transcript_path_str or not isinstance(transcript_path_str, str):
         return False
@@ -127,7 +129,7 @@ def has_recent_user_approval(payload: Dict[str, Any]) -> bool:
     if not transcript_path.is_file():
         return False
 
-    last_user_content = None
+    user_turns: List[str] = []
     try:
         with open(transcript_path, "r", encoding="utf-8") as f:
             for line in f:
@@ -137,25 +139,29 @@ def has_recent_user_approval(payload: Dict[str, Any]) -> bool:
                 try:
                     step = json.loads(line_str)
                     if str(step.get("source", "")).startswith("USER") and step.get("type") == "USER_INPUT":
-                        last_user_content = step.get("content", "")
+                        content = step.get("content", "")
+                        clean = re.sub(r"<ADDITIONAL_METADATA>[\s\S]*?</ADDITIONAL_METADATA>", "", str(content))
+                        user_turns.append(clean)
                 except json.JSONDecodeError:
                     continue
     except Exception:
         return False
 
-    if last_user_content is None:
+    if not user_turns:
         return False
 
-    clean = re.sub(r"<ADDITIONAL_METADATA>[\s\S]*?</ADDITIONAL_METADATA>", "", str(last_user_content))
-    clean_lower = clean.lower()
+    if any(re.search(r"(?:^|\s)/goal(?:\b|\s|$)", t, re.IGNORECASE) for t in user_turns):
+        return "/plan" not in user_turns[-1].lower()
 
-    if "/plan" in clean_lower:
+    if "/plan" in user_turns[-1].lower():
         return False
 
-    has_approval_token = bool(re.search(r"\b(proceed|approve|approved|yes|lgtm)\b", clean_lower))
-    has_approval_phrase = "the user has approved this document" in clean_lower
+    for turn in reversed(user_turns[-5:]):
+        clean_lower = turn.lower()
+        if bool(re.search(r"\b(proceed|approve|approved|yes|lgtm)\b", clean_lower)) or "the user has approved this document" in clean_lower:
+            return True
 
-    return has_approval_token or has_approval_phrase
+    return False
 
 
 def is_unauthorized_status_promotion(
@@ -180,9 +186,11 @@ def is_unauthorized_status_promotion(
             return True, f"Spec Gate Rejection: Failed to parse existing docs/specs/INDEX.md: {exc}"
 
     # Project new file content
-    if "TargetContent" in args or "ReplacementContent" in args:
-        target_content = args.get("TargetContent", "")
-        replacement_content = args.get("ReplacementContent", "")
+    target_content = args.get("TargetContent") or args.get("Target")
+    replacement_content = args.get("ReplacementContent") if "ReplacementContent" in args else args.get("Replacement")
+    if target_content is not None or replacement_content is not None:
+        target_content = target_content or ""
+        replacement_content = replacement_content or ""
         if not target_content or target_content not in disk_text:
             return (
                 True,
@@ -193,8 +201,8 @@ def is_unauthorized_status_promotion(
         projected_text = disk_text
         chunks = args.get("ReplacementChunks", [])
         for chunk in chunks:
-            tc = chunk.get("TargetContent", "")
-            rc = chunk.get("ReplacementContent", "")
+            tc = chunk.get("TargetContent") or chunk.get("Target") or ""
+            rc = chunk.get("ReplacementContent") or chunk.get("Replacement") or ""
             if not tc or tc not in projected_text:
                 return (
                     True,
@@ -204,7 +212,7 @@ def is_unauthorized_status_promotion(
     elif args.get("Append"):
         projected_text = disk_text + "\n" + (args.get("CodeContent") or args.get("Content") or "")
     else:
-        projected_text = args.get("CodeContent") or args.get("Content") or args.get("ReplacementContent") or ""
+        projected_text = args.get("CodeContent") or args.get("Content") or args.get("ReplacementContent") or args.get("Replacement") or ""
 
     try:
         projected_records = checker.parse_specs_index_text(projected_text)
@@ -293,8 +301,13 @@ def evaluate_spec_gate(payload: Dict[str, Any]) -> Dict[str, Any]:
 
     if tool_name in SUBAGENT_TOOLS:
         args = tool_call.get("args", {})
-        subagents = args.get("Subagents", [])
-        if not subagents or not isinstance(subagents, list):
+        subagents = args.get("Subagents")
+        if not isinstance(subagents, list):
+            if isinstance(args, dict) and (args.get("TypeName") or args.get("Prompt") or args.get("Role")):
+                subagents = [args]
+            else:
+                subagents = []
+        if not subagents:
             return {"decision": "allow"}
 
         for sa in subagents:
@@ -361,7 +374,8 @@ def evaluate_spec_gate(payload: Dict[str, Any]) -> Dict[str, Any]:
     elif tool_name in FILE_MUTATION_TOOLS:
         args = tool_call.get("args", {})
         raw_path = (
-            args.get("TargetFile")
+            args.get("Path")
+            or args.get("TargetFile")
             or args.get("target_file")
             or args.get("file_path")
             or args.get("path")

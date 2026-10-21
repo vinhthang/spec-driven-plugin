@@ -28,6 +28,7 @@ is_exempt_subagent = spec_gate_mod.is_exempt_subagent
 is_mutating_subagent = spec_gate_mod.is_mutating_subagent
 is_allowed_runtime_artifact_path = spec_gate_mod.is_allowed_runtime_artifact_path
 is_unauthorized_status_promotion = spec_gate_mod.is_unauthorized_status_promotion
+has_recent_user_approval = spec_gate_mod.has_recent_user_approval
 
 
 INDEX_HEADER = (
@@ -394,6 +395,54 @@ class TestSpecGate(unittest.TestCase):
         self.assertTrue(is_allowed_runtime_artifact_path(base / "hooks.json"))
         self.assertFalse(is_allowed_runtime_artifact_path(Path("/Users/thanghoang/src/app.py")))
         self.assertFalse(is_allowed_runtime_artifact_path(base / "other" / "file.txt"))
+
+    def test_req027_goal_autonomous_approval(self):
+        """REQ-027: /goal in transcript qualifies as user approval, but overridden by /plan."""
+        tr_path = self.workspace / "transcript.jsonl"
+        tr_path.write_text(
+            json.dumps({"source": "USER", "type": "USER_INPUT", "content": "Run /goal to fix issues\n<ADDITIONAL_METADATA>meta</ADDITIONAL_METADATA>"}) + "\n",
+            encoding="utf-8"
+        )
+        payload = {"transcriptPath": str(tr_path)}
+        self.assertTrue(has_recent_user_approval(payload))
+
+        # /plan in latest turn overrides /goal
+        tr_path.write_text(
+            json.dumps({"source": "USER", "type": "USER_INPUT", "content": "/goal do this"}) + "\n" +
+            json.dumps({"source": "USER", "type": "USER_INPUT", "content": "Please /plan the changes"}) + "\n",
+            encoding="utf-8"
+        )
+        self.assertFalse(has_recent_user_approval(payload))
+
+    def test_req027_antigravity2_tool_schemas_write_edit(self):
+        """REQ-027: write_file/edit_file with Path and flat invoke_subagent are intercepted."""
+        self._setup_valid_approved_spec()
+        payload_write = {
+            "cwd": str(self.workspace),
+            "toolCall": {
+                "name": "write_file",
+                "args": {"Path": str(self.workspace / "src" / "new_app.py"), "Content": "print('hello')"},
+            },
+        }
+        self.assertEqual(evaluate_spec_gate(payload_write).get("decision"), "allow")
+
+        payload_edit = {
+            "cwd": str(self.workspace),
+            "toolCall": {
+                "name": "edit_file",
+                "args": {"Path": str(self.workspace / "src" / "new_app.py"), "Target": "hello", "Replacement": "world"},
+            },
+        }
+        self.assertEqual(evaluate_spec_gate(payload_edit).get("decision"), "allow")
+
+        payload_flat_sa = {
+            "cwd": str(self.workspace),
+            "toolCall": {
+                "name": "invoke_subagent",
+                "args": {"TypeName": "self", "Role": "Executor", "Prompt": "Implement feature"},
+            },
+        }
+        self.assertEqual(evaluate_spec_gate(payload_flat_sa).get("decision"), "allow")
 
 
 if __name__ == "__main__":

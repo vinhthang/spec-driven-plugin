@@ -28,3 +28,10 @@ In [`google-research/harness2`](https://github.com/google-research/harness2), `h
 - **WHEN** `scripts/spec-gate.py` evaluates a file mutation targeting global Antigravity configuration files (`~/.gemini/config/rules/`, `~/.gemini/config/scripts/`, `~/.gemini/config/skills/`, `~/.gemini/config/hooks.json`) that do not resolve via symlinks to a `docs/specs/` repository, **THE** gate **SHALL** allow the operation in accordance with `RULE[workspace-boundary]`.
 - **Acceptance Criteria**:
   - `is_allowed_runtime_artifact_path(target_path)` returns `True` for paths under `.gemini/config/{rules,scripts,skills}` and `.gemini/config/hooks.json`.
+
+
+### `REQ-027` — `/goal` Autonomous Approval & Antigravity 2.0 Tool Schema Parity in `spec-gate.py`
+- **WHEN** the user invokes `/goal` in the conversation transcript, **THE** `has_recent_user_approval()` function in `scripts/spec-gate.py` **SHALL** recognize `/goal` as explicit human authorization per `RULE[explicit-approval]`, and **THE** gate **SHALL** intercept Antigravity 2.0 `write_file` / `edit_file` (`Path`) and flat `invoke_subagent` calls alongside legacy `write_to_file` / `replace_file_content` (`TargetFile`) and `Subagents=[...]`.
+- **Acceptance Criteria**:
+  - `has_recent_user_approval()` returns `True` when `/goal` is present in the latest user turn (or any user turn initiating the active `/goal` session without `/plan`).
+  - `FILE_MUTATION_TOOLS` includes `write_file`, `edit_file`, `default_api:write_file`, `default_api:edit_file`, `client:write_file`, `client:edit_file`, and resolves `args.get("Path")`.

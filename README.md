@@ -34,6 +34,7 @@ Intercepts `invoke_subagent`, `write_to_file`, `replace_file_content`, and `mult
   2. `<package_dir>/traceability_audit.json` passes `validate_semantic_traceability()` with a high-reasoning auditor model (Opus-class or Gemini 3.8 Flash High; Flash tiers below High are mechanically rejected, per ADR-012).
 - **Subagent Model Guard**: Allows `traceability-auditor` (`TypeName="traceability-auditor"`) to run during Phase 1 planning, but denies dispatch if `Model` names a Flash tier below High (`"flash"`, `"flash_lite"`, `*-flash-medium`, `*-flash-low`).
 - **Global Configuration Path Allowance (`REQ-026`)**: `spec-gate.py` permits `~/.gemini/config/{rules,scripts,skills,hooks.json}` paths per `RULE[workspace-boundary]`.
+- **`/goal` Autonomous Mode & Antigravity 2.0 Tool Schema Parity (`REQ-027`)**: `spec-gate.py` recognizes `/goal` invocations in `has_recent_user_approval()` per `RULE[explicit-approval]` and gates both legacy (`write_to_file`, `replace_file_content`, `Subagents`) and Antigravity 2.0 (`write_file`, `edit_file` with `Path`, flat `invoke_subagent`) schemas.
 
 ### 2. Specification & Semantic Checker (`scripts/spec_checker.py` & `scripts/semantic_checker.py`)
 ```bash
