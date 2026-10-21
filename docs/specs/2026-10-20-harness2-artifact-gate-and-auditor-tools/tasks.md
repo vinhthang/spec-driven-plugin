@@ -8,3 +8,4 @@
 - [x] **Task 4 (`REQ-023`–`REQ-026`)**: Add unit tests in `tests/test_spec_checker.py` and `tests/test_spec_gate.py` covering all requirements.
 
 - [x] **Task 5 (`REQ-027`)**: Update `scripts/spec-gate.py` and `tests/test_spec_gate.py` for `/goal` autonomous approval recognition and Antigravity 2.0 `write_file`/`edit_file`/`Path`/flat `invoke_subagent` parity.
+- [x] **Task 6 (`REQ-028`)**: Implement `extract_prompt_workspaces()` in `scripts/spec-gate.py` and add unit tests in `tests/test_spec_gate.py` for target repository resolution from absolute paths in `invoke_subagent` prompts.

@@ -52,7 +52,7 @@
   51 passed in 0.28s
   ```
 
-### `REQ-027` — `/goal` Autonomous Approval & Antigravity 2.0 Schema Parity in `spec-gate.py`
+### `REQ-027` & `REQ-028` — `/goal` Autonomous Approval, Antigravity 2.0 Schema Parity & Prompt Path Workspace Resolution in `spec-gate.py`
 - **Verified By**: `scripts/spec-gate.py` and `tests/test_spec_gate.py`
 - **Command**:
   ```bash
@@ -60,5 +60,5 @@
   ```
 - **Verbatim Output**:
   ```text
-  53 passed in 0.31s
+  55 passed in 0.34s
   ```

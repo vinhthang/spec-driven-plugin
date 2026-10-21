@@ -17,8 +17,10 @@ tools: [read_file, view_file, write_file, write_to_file]
 - Extend `is_allowed_runtime_artifact_path(target_path: Path) -> bool` to recognize contiguous `(".gemini", "config", "rules")`, `(".gemini", "config", "scripts")`, `(".gemini", "config", "skills")`, and `~/.gemini/config/hooks.json`.
 
 
-### 1.4 `scripts/spec-gate.py` — `/goal` Autonomous Approval & Antigravity 2.0 Tool Schemas (`REQ-027`)
+### 1.4 `scripts/spec-gate.py` — `/goal` Autonomous Approval & Antigravity 2.0 Tool Schemas (`REQ-027`, `REQ-028`)
 - Extend `FILE_MUTATION_TOOLS` with `write_file`, `edit_file`, `default_api:write_file`, `default_api:edit_file`, `client:write_file`, `client:edit_file`.
 - Extract `args.get("Path")` alongside `TargetFile` / `target_file` / `file_path` / `path`, and support `Target` / `Replacement` in `is_unauthorized_status_promotion()`.
 - Normalize flat `invoke_subagent` `args` (`[args]` when `"Subagents"` is absent and `"Prompt"` or `"TypeName"` is present).
 - In `has_recent_user_approval()`, return `True` if `/goal` appears in the user input stream.
+- Implement `extract_prompt_workspaces(all_prompts: str, candidate_workspaces: List[Path]) -> List[Path]` (`REQ-028`):
+  - Matches both `[ws for ws in candidate_workspaces if str(ws) in all_prompts]` and any absolute path `/[A-Za-z0-9_.\-/]+` in `all_prompts` whose `resolve_target_workspace()` parent contains `docs/specs/INDEX.md`.

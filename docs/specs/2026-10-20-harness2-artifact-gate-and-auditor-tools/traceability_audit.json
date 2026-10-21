@@ -1,6 +1,6 @@
 {
-  "spec_hash": "e6c5010609e49c0c693a8e7ee848040abe6d934670086ecb4124131733249884",
-  "evidence_hash": "6995f3ce2932ed535017bf590feb19ec2969977ed2adac7db7cd47619a449fcf",
+  "spec_hash": "36809fd3eb41e64f9981036c79fe0296024a9e2f4a9570968352ab5e536b4e30",
+  "evidence_hash": "7666d519fa95c31fd81ab232a8fdea35a9835708bf71ac1d5c83df2fd474c47d",
   "auditor_model": "claude-opus-4-6",
   "verdict": "PASS",
   "requirements_evaluated": {
@@ -48,6 +48,15 @@
       "decisions_consistent": true,
       "evidence_verified": true,
       "evidence_rationale": "Verified by automated pytest suite and verification.md for REQ-027."
+    },
+    "REQ-028": {
+      "design_aligned": true,
+      "design_rationale": "Section 1.4 defines extract_prompt_workspaces() resolving target repositories from absolute paths in invoke_subagent prompts.",
+      "tasks_actionable": true,
+      "tasks_rationale": "Task 6 updates spec-gate.py and test_spec_gate.py.",
+      "decisions_consistent": true,
+      "evidence_verified": true,
+      "evidence_rationale": "Verified by 55/55 passing tests in test_spec_gate.py."
     }
   }
 }

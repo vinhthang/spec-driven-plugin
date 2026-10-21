@@ -120,6 +120,25 @@ def resolve_target_workspace(resolved_target: Path, candidate_workspaces: List[P
     return None
 
 
+def extract_prompt_workspaces(all_prompts: str, candidate_workspaces: List[Path]) -> List[Path]:
+    """Extract mentioned workspaces from prompt text via direct match or file path resolution."""
+    mentioned = [ws for ws in candidate_workspaces if str(ws) in all_prompts]
+    seen = {ws.resolve() for ws in mentioned}
+    for p_str in re.findall(r"(/[A-Za-z0-9_.\-/]+)", all_prompts):
+        try:
+            p = Path(p_str)
+            if p.exists() or p.parent.exists():
+                ws = resolve_target_workspace(p.resolve(), candidate_workspaces)
+                if ws:
+                    ws_res = ws.resolve()
+                    if ws_res not in seen and (ws_res / "docs" / "specs" / "INDEX.md").is_file():
+                        seen.add(ws_res)
+                        mentioned.append(ws)
+        except Exception:
+            continue
+    return mentioned
+
+
 def has_recent_user_approval(payload: Dict[str, Any]) -> bool:
     """Inspect transcriptPath for explicit user approval (Proceed/Approved) or active /goal session."""
     transcript_path_str = payload.get("transcriptPath", "")
@@ -337,7 +356,7 @@ def evaluate_spec_gate(payload: Dict[str, Any]) -> Dict[str, Any]:
             return {"decision": "allow"}
 
         all_prompts = " ".join([str(sa.get("Prompt") or "") for sa in subagents])
-        mentioned_workspaces = [ws for ws in candidate_workspaces if str(ws) in all_prompts]
+        mentioned_workspaces = extract_prompt_workspaces(all_prompts, candidate_workspaces)
 
         if mentioned_workspaces:
             for ws in mentioned_workspaces:

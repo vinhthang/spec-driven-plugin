@@ -35,3 +35,9 @@ In [`google-research/harness2`](https://github.com/google-research/harness2), `h
 - **Acceptance Criteria**:
   - `has_recent_user_approval()` returns `True` when `/goal` is present in the latest user turn (or any user turn initiating the active `/goal` session without `/plan`).
   - `FILE_MUTATION_TOOLS` includes `write_file`, `edit_file`, `default_api:write_file`, `default_api:edit_file`, `client:write_file`, `client:edit_file`, and resolves `args.get("Path")`.
+
+### `REQ-028` — Target Repository Resolution from Absolute Paths in `invoke_subagent` Prompts
+- **WHEN** `scripts/spec-gate.py` evaluates an `invoke_subagent` tool call whose `Prompt` references absolute filesystem paths (`/[A-Za-z0-9_.\-/]+`) belonging to a repository containing `docs/specs/INDEX.md` (such as `~/.gemini/config/plugins/<plugin>`), **THE** gate **SHALL** resolve those target repositories via `resolve_target_workspace()` and validate their `docs/specs/INDEX.md` rather than falling back to unrelated `workspacePaths` repositories.
+- **Acceptance Criteria**:
+  - `extract_prompt_workspaces(all_prompts: str, candidate_workspaces: List[Path]) -> List[Path]` resolves both `candidate_workspaces` and absolute paths mentioned in `all_prompts` that resolve to a parent directory containing `docs/specs/INDEX.md`.
+  - Dispatching a subagent targeting a plugin with a valid spec succeeds even when `workspacePaths` contains an unrelated repo with an incomplete draft spec.

@@ -20,3 +20,8 @@
 - **Status**: Accepted
 - **Context**: `RULE[explicit-approval]` specifies that `/goal` authorizes autonomous execution without intermediate approval stops, and Antigravity 2.0 uses `write_file`/`edit_file` (`Path`) and flat `invoke_subagent` arguments.
 - **Decision**: Update `has_recent_user_approval()`, `FILE_MUTATION_TOOLS`, target path extraction, and subagent normalization in `scripts/spec-gate.py` to support `/goal` and Antigravity 2.0 tool schemas.
+
+## ADR-019: Resolve Target Repositories from Absolute Paths in `invoke_subagent` Prompts (`REQ-028`)
+- **Status**: Accepted
+- **Context**: When `invoke_subagent` was called with a prompt targeting `/Users/.../.gemini/config/plugins/attention-guard/`, `spec-gate.py` only checked `[ws for ws in candidate_workspaces if str(ws) in all_prompts]`, ignoring the target plugin repository and falsely failing against an unrelated workspace in `workspacePaths`.
+- **Decision**: Extract absolute paths from `all_prompts` in `spec-gate.py` and resolve them via `resolve_target_workspace()` whenever the resolved root contains `docs/specs/INDEX.md`.

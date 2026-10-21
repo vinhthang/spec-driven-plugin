@@ -30,6 +30,7 @@ is_mutating_subagent = spec_gate_mod.is_mutating_subagent
 is_allowed_runtime_artifact_path = spec_gate_mod.is_allowed_runtime_artifact_path
 is_unauthorized_status_promotion = spec_gate_mod.is_unauthorized_status_promotion
 has_recent_user_approval = spec_gate_mod.has_recent_user_approval
+extract_prompt_workspaces = spec_gate_mod.extract_prompt_workspaces
 
 
 INDEX_HEADER = (
@@ -454,6 +455,41 @@ class TestSpecGate(unittest.TestCase):
         regex = re.compile(matcher_pattern)
         for tool in ["write_file", "edit_file", "default_api:write_file", "default_api:edit_file", "client:write_file", "client:edit_file"]:
             self.assertIsNotNone(regex.match(tool), f"Matcher should match {tool}")
+
+    def test_req028_extract_prompt_workspaces(self):
+        """REQ-028: Extract mentioned workspaces via direct candidate match and absolute file paths."""
+        self._setup_valid_approved_spec()
+        other_dir = tempfile.mkdtemp()
+        try:
+            other_ws = Path(other_dir).resolve()
+            (other_ws / "docs" / "specs").mkdir(parents=True)
+            (other_ws / "docs" / "specs" / "INDEX.md").write_text("# Specs\n", encoding="utf-8")
+            target_file = other_ws / "src" / "worker.py"
+            target_file.parent.mkdir(parents=True)
+            target_file.touch()
+
+            # 1. Direct candidate workspace match
+            candidates = [self.workspace.resolve()]
+            prompt1 = f"Please update files in {self.workspace.resolve()}/src"
+            self.assertEqual(extract_prompt_workspaces(prompt1, candidates), [self.workspace.resolve()])
+
+            # 2. File path resolution to external workspace with specs/INDEX.md
+            prompt2 = f"Update logic in {target_file}"
+            found = extract_prompt_workspaces(prompt2, candidates)
+            self.assertIn(other_ws, [w.resolve() for w in found])
+
+            # 3. invoke_subagent targeting valid external workspace succeeds despite invalid candidate
+            payload = {
+                "cwd": str(self.workspace),
+                "workspacePaths": [str(other_ws)],
+                "toolCall": {
+                    "name": "invoke_subagent",
+                    "args": {"TypeName": "self", "Role": "Executor", "Prompt": f"Implement feature in {self.workspace}/src/app.py"},
+                },
+            }
+            self.assertEqual(evaluate_spec_gate(payload).get("decision"), "allow")
+        finally:
+            shutil.rmtree(other_dir, ignore_errors=True)
 
 
 if __name__ == "__main__":
