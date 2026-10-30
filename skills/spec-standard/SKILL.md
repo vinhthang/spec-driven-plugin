@@ -51,6 +51,7 @@ Every significant feature or architectural workstream maintains a package direct
 
 ### Scaling Switches
 - **Mandatory Planning Baseline**: `spec.md` + `decisions.md` + `design.md` + `tasks.md` (enforced mechanically by `spec_checker.py` and `spec-gate.py` before any code mutation or subagent execution). All 4 files must contain non-whitespace content, and all requirement IDs in `spec.md` must be cited in `design.md` and `tasks.md`, with at least one `ADR-\d+` or requirement ID in `decisions.md`.
+- **Structured ADR Debate & Anti-Dogma (`REQ-030`)**: Structured multi-section ADR blocks in `decisions.md` containing `Context` and `Decision` sections must include explicit `Trade-offs & Risks` and `Rejected Alternatives` debate analysis. Hard source-file line-count caps (e.g. `< 500 lines`) without trade-off and rejected alternatives justification are rejected by `spec_checker.py`.
 - **Mandatory Phase 2 Verification**: `verification.md` must be populated with verbatim tool outputs and requirement ID citations upon task completion when verifying evidence.
 
 ---

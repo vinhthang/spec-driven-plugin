@@ -23,6 +23,8 @@ For each declared requirement ID `REQ-xxx`:
 - `tasks_actionable` (`bool`): Are the tasks in `tasks.md` broken down into actionable, falsifiable steps that map directly to the requirement?
 - `tasks_rationale` (`str`): Cites the specific task item(s) covering `REQ-xxx`.
 - `decisions_consistent` (`bool`): Are architectural decisions in `decisions.md` consistent with and supportive of `REQ-xxx` without contradictions?
+- `architecturally_sound` (`bool`): Evaluates whether `REQ-xxx` and its governing `ADR-xxx` are technically sound, preserve module cohesion and encapsulation (`private` vs `internal`), avoid conflating agent/IDE tool limits (e.g., `ast-gate.py` 500-line read limits) with source code file-size caps, and justify trade-offs. You must fail the audit (`verdict: "FAIL"`, `architecturally_sound: false`) when a requirement or ADR imposes arbitrary source-file line-count caps or weakens encapsulation without trade-off justification.
+- `debate_rationale` (`str`): Summarizes the trade-off and rejected-alternatives verification for `REQ-xxx`.
 - `evidence_verified` (`bool`, optional): When verification evidence is audited, is there verbatim evidence in `verification.md` confirming the requirement works?
 - `evidence_rationale` (`str`, optional): Cites the specific verification record or test assertion for `REQ-xxx`.
 
@@ -46,6 +48,8 @@ For each declared requirement ID `REQ-xxx`:
       "tasks_actionable": true,
       "tasks_rationale": "Task 1 implements...",
       "decisions_consistent": true,
+      "architecturally_sound": true,
+      "debate_rationale": "Trade-offs and rejected alternatives evaluated; preserves encapsulation without arbitrary file size caps.",
       "evidence_verified": true,
       "evidence_rationale": "verification.md confirms test passed with exit code 0"
     }

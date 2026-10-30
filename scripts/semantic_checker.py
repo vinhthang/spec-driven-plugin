@@ -183,6 +183,12 @@ def validate_semantic_traceability(
                 False,
                 f"Requirement '{req_id}' failed semantic traceability verification in traceability_audit.json",
             )
+        if "architecturally_sound" in entry:
+            if entry.get("architecturally_sound") is not True or not str(entry.get("debate_rationale") or "").strip():
+                return (
+                    False,
+                    f"Requirement '{req_id}' failed adversarial architectural soundness check in traceability_audit.json: {entry.get('debate_rationale') or 'missing debate_rationale'}",
+                )
         if verify_evidence:
             if (
                 entry.get("evidence_verified") is not True

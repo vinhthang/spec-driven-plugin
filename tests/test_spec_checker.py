@@ -506,6 +506,107 @@ class TestSpecChecker(unittest.TestCase):
         self.assertFalse(ok)
         self.assertIn("syntax error", err)
 
+    def test_req029_adversarial_architectural_soundness_receipt(self):
+        """Test REQ-029: validate_semantic_traceability verifies architecturally_sound and debate_rationale."""
+        pkg = self.workspace / "pkg-arch-sound"
+        self._create_valid_package(pkg, ("REQ-001",))
+        spec_hash = spec_checker.compute_spec_package_hash(pkg, include_verification=False)
+        audit_file = pkg / "traceability_audit.json"
+
+        # 1. Legacy receipt without architecturally_sound remains passing
+        legacy_audit = {
+            "spec_hash": spec_hash,
+            "auditor_model": "claude-opus-4-6",
+            "verdict": "PASS",
+            "requirements_evaluated": {
+                "REQ-001": {
+                    "design_aligned": True,
+                    "design_rationale": "Design ok",
+                    "tasks_actionable": True,
+                    "tasks_rationale": "Task ok",
+                    "decisions_consistent": True,
+                }
+            },
+        }
+        audit_file.write_text(json.dumps(legacy_audit), encoding="utf-8")
+        ok, err = spec_checker.validate_semantic_traceability(pkg)
+        self.assertTrue(ok, f"Legacy receipt without architecturally_sound should pass: {err}")
+
+        # 2. Receipt with architecturally_sound=False is rejected
+        audit_unsound = json.loads(json.dumps(legacy_audit))
+        audit_unsound["requirements_evaluated"]["REQ-001"]["architecturally_sound"] = False
+        audit_unsound["requirements_evaluated"]["REQ-001"]["debate_rationale"] = "Conflates tool limits with architecture"
+        audit_file.write_text(json.dumps(audit_unsound), encoding="utf-8")
+        ok, err = spec_checker.validate_semantic_traceability(pkg)
+        self.assertFalse(ok)
+        self.assertIn("architectural soundness", err)
+
+        # 3. Receipt with architecturally_sound=True but empty debate_rationale is rejected
+        audit_empty_rationale = json.loads(json.dumps(legacy_audit))
+        audit_empty_rationale["requirements_evaluated"]["REQ-001"]["architecturally_sound"] = True
+        audit_empty_rationale["requirements_evaluated"]["REQ-001"]["debate_rationale"] = "   "
+        audit_file.write_text(json.dumps(audit_empty_rationale), encoding="utf-8")
+        ok, err = spec_checker.validate_semantic_traceability(pkg)
+        self.assertFalse(ok)
+        self.assertIn("architectural soundness", err)
+
+        # 4. Receipt with architecturally_sound=True and non-empty debate_rationale is accepted
+        audit_sound = json.loads(json.dumps(legacy_audit))
+        audit_sound["requirements_evaluated"]["REQ-001"]["architecturally_sound"] = True
+        audit_sound["requirements_evaluated"]["REQ-001"]["debate_rationale"] = "Debated trade-offs and alternatives"
+        audit_file.write_text(json.dumps(audit_sound), encoding="utf-8")
+        ok, err = spec_checker.validate_semantic_traceability(pkg)
+        self.assertTrue(ok, f"Sound receipt should pass: {err}")
+
+    def test_req030_validate_adr_debate_structure_and_anti_dogma(self):
+        """Test REQ-030: validate_spec_package enforces ADR debate structure and anti-dogma checks."""
+        pkg = self.workspace / "pkg-adr-debate"
+        pkg.mkdir(parents=True, exist_ok=True)
+        (pkg / "spec.md").write_text("# Spec\n\n- REQ-001: Description\n", encoding="utf-8")
+        (pkg / "design.md").write_text("# Design\nAddresses: REQ-001\n", encoding="utf-8")
+        (pkg / "tasks.md").write_text("# Tasks\n- [ ] REQ-001\n", encoding="utf-8")
+
+        # 1. 1-line simple ADR fixture still passes
+        (pkg / "decisions.md").write_text("# Decisions\nADR-001: Architecture decision\n", encoding="utf-8")
+        ok, err = spec_checker.validate_spec_package(pkg)
+        self.assertTrue(ok, f"1-line ADR fixture should pass: {err}")
+
+        # 2. Structured multi-section ADR omitting Trade-offs & Risks or Rejected Alternatives is rejected
+        structured_incomplete_adr = (
+            "# Decisions\n\n"
+            "## ADR-008 — Line Count Limits\n"
+            "- **Context**: Large files need refactoring.\n"
+            "- **Decision**: Enforce line count limits.\n"
+        )
+        (pkg / "decisions.md").write_text(structured_incomplete_adr, encoding="utf-8")
+        ok, err = spec_checker.validate_spec_package(pkg)
+        self.assertFalse(ok)
+        self.assertIn("missing required 'Trade-offs & Risks' or 'Rejected Alternatives'", err)
+
+        # 3. Spec declaring hard line-count cap without debate section in decisions.md is rejected
+        (pkg / "spec.md").write_text(
+            "# Spec\n\n- REQ-001: Sub-500-Line Invariant: every .swift file in Sources/ is under 500 lines.\n",
+            encoding="utf-8",
+        )
+        (pkg / "decisions.md").write_text("# Decisions\nADR-001: Architecture decision\n", encoding="utf-8")
+        ok, err = spec_checker.validate_spec_package(pkg)
+        self.assertFalse(ok)
+        self.assertIn("line-count cap", err)
+
+        # 4. Structured ADR including Trade-offs & Risks and Rejected Alternatives is accepted
+        structured_complete_adr = (
+            "# Decisions\n\n"
+            "## ADR-008 — Modularity Strategy\n"
+            "- **Context**: Large files need refactoring.\n"
+            "- **Decision**: Refactor by cohesive domain boundaries.\n"
+            "- **Trade-offs & Risks**: Increases file count slightly, requires import management.\n"
+            "- **Rejected Alternatives**: Arbitrary 500-line cutoffs were rejected because they fragment cohesion.\n"
+        )
+        (pkg / "decisions.md").write_text(structured_complete_adr, encoding="utf-8")
+        ok, err = spec_checker.validate_spec_package(pkg)
+        self.assertTrue(ok, f"Structured ADR with full debate should pass: {err}")
+
+
 
 if __name__ == "__main__":
     unittest.main()

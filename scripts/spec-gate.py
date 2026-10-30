@@ -139,6 +139,34 @@ def extract_prompt_workspaces(all_prompts: str, candidate_workspaces: List[Path]
     return mentioned
 
 
+def _project_file_text(disk_text: str, args: Dict[str, Any], file_label: str = "file") -> Tuple[Optional[str], Optional[str]]:
+    """Helper to apply tool args mutation to in-memory file content."""
+    target_content = args.get("TargetContent") or args.get("Target")
+    replacement_content = args.get("ReplacementContent") if "ReplacementContent" in args else args.get("Replacement")
+    if target_content is not None or replacement_content is not None:
+        target_content = target_content or ""
+        replacement_content = replacement_content or ""
+        if not target_content or target_content not in disk_text:
+            return None, f"TargetContent for {file_label} replacement was empty or not found on disk."
+        return disk_text.replace(target_content, replacement_content, 1), None
+    elif "ReplacementChunks" in args and isinstance(args.get("ReplacementChunks"), list):
+        projected_text = disk_text
+        chunks = args.get("ReplacementChunks", [])
+        for chunk in chunks:
+            tc = chunk.get("TargetContent") or chunk.get("Target") or ""
+            rc = chunk.get("ReplacementContent") or chunk.get("Replacement") or ""
+            if not tc or tc not in projected_text:
+                return None, f"ReplacementChunk TargetContent was empty or not found in {file_label}."
+            projected_text = projected_text.replace(tc, rc, 1)
+        return projected_text, None
+    elif args.get("Append"):
+        content = args.get("CodeContent") or args.get("Content") or ""
+        return disk_text + "\n" + content, None
+    else:
+        content = args.get("CodeContent") or args.get("Content") or args.get("ReplacementContent") or args.get("Replacement") or ""
+        return content, None
+
+
 def has_recent_user_approval(payload: Dict[str, Any]) -> bool:
     """Inspect transcriptPath for explicit user approval (Proceed/Approved) or active /goal session."""
     transcript_path_str = payload.get("transcriptPath", "")
@@ -169,15 +197,36 @@ def has_recent_user_approval(payload: Dict[str, Any]) -> bool:
     if not user_turns:
         return False
 
-    if any(re.search(r"(?:^|\s)/goal(?:\b|\s|$)", t, re.IGNORECASE) for t in user_turns):
-        return "/plan" not in user_turns[-1].lower()
-
     if "/plan" in user_turns[-1].lower():
+        return False
+
+    # Check for scoped /goal in user turns (REQ-032, ADR-023)
+    goal_pattern = re.compile(r"(?:^|\s)/goal(?:\b|\s|$)", re.IGNORECASE)
+    approval_pattern = re.compile(r"\b(proceed|approve|approved|yes|lgtm|continue)\b", re.IGNORECASE)
+
+    last_goal_idx = None
+    for idx, t in enumerate(user_turns):
+        if goal_pattern.search(t):
+            last_goal_idx = idx
+
+    if last_goal_idx is not None:
+        if last_goal_idx == len(user_turns) - 1:
+            return True
+        subsequent = user_turns[last_goal_idx + 1 :]
+        if all(
+            approval_pattern.search(turn) or "the user has approved this document" in turn.lower()
+            for turn in subsequent
+        ):
+            return True
+        for turn in reversed(subsequent):
+            clean_lower = turn.lower()
+            if approval_pattern.search(clean_lower) or "the user has approved this document" in clean_lower:
+                return True
         return False
 
     for turn in reversed(user_turns[-5:]):
         clean_lower = turn.lower()
-        if bool(re.search(r"\b(proceed|approve|approved|yes|lgtm)\b", clean_lower)) or "the user has approved this document" in clean_lower:
+        if approval_pattern.search(clean_lower) or "the user has approved this document" in clean_lower:
             return True
 
     return False
@@ -189,15 +238,15 @@ def is_unauthorized_status_promotion(
     checker: Any,
     payload: Optional[Dict[str, Any]] = None,
 ) -> Tuple[bool, str]:
-    """Detect unauthorized promotion of features to execution-authorized statuses in docs/specs/INDEX.md."""
-    existing_approved = set()
+    """Detect unauthorized promotion or mid-flight scope expansion in docs/specs/INDEX.md (REQ-031, ADR-022)."""
+    existing_approved_map: Dict[str, Dict[str, str]] = {}
     disk_text = ""
     if index_path.exists() and index_path.is_file():
         try:
             disk_text = index_path.read_text(encoding="utf-8")
             existing_records = checker.parse_specs_index(index_path)
-            existing_approved = {
-                r["feature_id"]
+            existing_approved_map = {
+                r["feature_id"]: r
                 for r in existing_records
                 if checker.normalize_status(r.get("status", "")) in checker.EXECUTION_STATUSES
             }
@@ -205,33 +254,9 @@ def is_unauthorized_status_promotion(
             return True, f"Spec Gate Rejection: Failed to parse existing docs/specs/INDEX.md: {exc}"
 
     # Project new file content
-    target_content = args.get("TargetContent") or args.get("Target")
-    replacement_content = args.get("ReplacementContent") if "ReplacementContent" in args else args.get("Replacement")
-    if target_content is not None or replacement_content is not None:
-        target_content = target_content or ""
-        replacement_content = replacement_content or ""
-        if not target_content or target_content not in disk_text:
-            return (
-                True,
-                "Spec Gate Rejection: TargetContent for docs/specs/INDEX.md replacement was empty or not found on disk.",
-            )
-        projected_text = disk_text.replace(target_content, replacement_content, 1)
-    elif "ReplacementChunks" in args and isinstance(args.get("ReplacementChunks"), list):
-        projected_text = disk_text
-        chunks = args.get("ReplacementChunks", [])
-        for chunk in chunks:
-            tc = chunk.get("TargetContent") or chunk.get("Target") or ""
-            rc = chunk.get("ReplacementContent") or chunk.get("Replacement") or ""
-            if not tc or tc not in projected_text:
-                return (
-                    True,
-                    "Spec Gate Rejection: ReplacementChunk TargetContent was empty or not found in docs/specs/INDEX.md.",
-                )
-            projected_text = projected_text.replace(tc, rc, 1)
-    elif args.get("Append"):
-        projected_text = disk_text + "\n" + (args.get("CodeContent") or args.get("Content") or "")
-    else:
-        projected_text = args.get("CodeContent") or args.get("Content") or args.get("ReplacementContent") or args.get("Replacement") or ""
+    projected_text, err = _project_file_text(disk_text, args, file_label="docs/specs/INDEX.md")
+    if err or projected_text is None:
+        return True, f"Spec Gate Rejection: {err}"
 
     try:
         projected_records = checker.parse_specs_index_text(projected_text)
@@ -246,34 +271,131 @@ def is_unauthorized_status_promotion(
             f"Spec Gate Rejection: Failed to parse projected docs/specs/INDEX.md: {exc}",
         )
 
-    newly_promoted = [
-        r for r in projected_records
-        if checker.normalize_status(r.get("status", "")) in checker.EXECUTION_STATUSES
-        and r.get("feature_id", "") not in existing_approved
-    ]
-    if newly_promoted:
+    newly_promoted_or_expanded: List[Tuple[Dict[str, str], str]] = []
+    for r in projected_records:
+        norm_status = checker.normalize_status(r.get("status", ""))
+        if norm_status in checker.EXECUTION_STATUSES:
+            feat_id = r.get("feature_id", "")
+            if feat_id not in existing_approved_map:
+                newly_promoted_or_expanded.append((r, "promotion"))
+            else:
+                old_r = existing_approved_map[feat_id]
+                old_req = old_r.get("req_range", "").strip()
+                new_req = r.get("req_range", "").strip()
+                old_adr = old_r.get("key_decisions", "").strip()
+                new_adr = r.get("key_decisions", "").strip()
+                if old_req != new_req or old_adr != new_adr:
+                    newly_promoted_or_expanded.append((r, "expansion"))
+
+    if newly_promoted_or_expanded:
         if not (
             os.environ.get("SPEC_GATE_ALLOW_APPROVAL") == "1"
             or (payload is not None and has_recent_user_approval(payload))
         ):
-            feat_id = newly_promoted[0].get("feature_id", "")
-            status = newly_promoted[0].get("status", "")
-            return (
-                True,
-                f"Spec Gate Rejection: Autonomous self-approval of feature '{feat_id}' to status '{status}' in docs/specs/INDEX.md is forbidden. Register as Draft/Planning and ask the user to approve.",
-            )
+            rec, kind = newly_promoted_or_expanded[0]
+            feat_id = rec.get("feature_id", "")
+            status = rec.get("status", "")
+            if kind == "expansion":
+                return (
+                    True,
+                    f"Spec Gate Rejection: Mid-flight scope expansion of feature '{feat_id}' in docs/specs/INDEX.md is forbidden without explicit user approval ('Proceed').",
+                )
+            else:
+                return (
+                    True,
+                    f"Spec Gate Rejection: Autonomous self-approval of feature '{feat_id}' to status '{status}' in docs/specs/INDEX.md is forbidden. Register as Draft/Planning and ask the user to approve.",
+                )
 
-        for record in newly_promoted:
+        for record, kind in newly_promoted_or_expanded:
             pkg_dir, _ = checker.resolve_package_dir(record, index_path.parent.parent, index_path.parent)
             if pkg_dir is not None:
                 sem_ok, sem_err = checker.validate_semantic_traceability(pkg_dir, verify_evidence=False)
                 if not sem_ok:
+                    action_word = "expand scope of" if kind == "expansion" else "promote"
                     return (
                         True,
-                        f"Spec Gate Rejection: Cannot promote feature '{record.get('feature_id')}' to '{record.get('status')}' without a valid Opus semantic traceability audit: {sem_err}",
+                        f"Spec Gate Rejection: Cannot {action_word} feature '{record.get('feature_id')}' to '{record.get('status')}' without a valid Opus semantic traceability audit: {sem_err}",
                     )
 
     return False, ""
+
+
+def extract_adr_decision_bodies(text: str) -> Dict[str, str]:
+    """Extract mapping of ADR-xxx -> normalized Decision body text (REQ-033, ADR-024)."""
+    adr_blocks = list(re.finditer(r"^#{1,4}\s+.*?\b(ADR-\d+)\b.*$", text, re.MULTILINE))
+    bodies: Dict[str, str] = {}
+    for i, m in enumerate(adr_blocks):
+        adr_id = m.group(1)
+        start = m.start()
+        end = adr_blocks[i + 1].start() if i + 1 < len(adr_blocks) else len(text)
+        block = text[start:end]
+        dec_match = re.search(
+            r"(?:^|\n)\s*[-*]\s+\*\*Decision\*\*:(.*?)(?=\n\s*[-*]\s+\*\*|\n#{1,4}\s+|$)",
+            block,
+            re.DOTALL | re.IGNORECASE,
+        )
+        if dec_match:
+            bodies[adr_id] = " ".join(dec_match.group(1).split()).strip()
+    return bodies
+
+
+def is_destructive_decisions_edit(
+    decisions_path: Path,
+    index_path: Path,
+    args: Dict[str, Any],
+    checker: Any,
+) -> Tuple[bool, str]:
+    """Block deletions of existing ADR IDs or in-place rewriting of decision bodies (REQ-033, ADR-024)."""
+    if not decisions_path.exists() or not decisions_path.is_file():
+        return False, ""
+
+    try:
+        disk_text = decisions_path.read_text(encoding="utf-8")
+    except Exception as exc:
+        return True, f"Spec Gate Rejection: Failed to read decisions.md from disk: {exc}"
+
+    projected_text, err = _project_file_text(disk_text, args)
+    if err or projected_text is None:
+        return True, f"Spec Gate Rejection: Failed to project decisions.md content: {err}"
+
+    old_adrs = set(re.findall(r"\bADR-\d+\b", disk_text))
+    new_adrs = set(re.findall(r"\bADR-\d+\b", projected_text))
+    missing_adrs = sorted(list(old_adrs - new_adrs))
+    if missing_adrs:
+        return (
+            True,
+            f"Spec Gate Rejection: decisions.md is append-only (RULE[spec-standard]). Existing ADR IDs cannot be removed: {', '.join(missing_adrs)}",
+        )
+
+    # Determine if feature is in execution or terminal status
+    is_locked = False
+    feat_name = decisions_path.parent.name
+    if index_path.exists() and index_path.is_file():
+        try:
+            records = checker.parse_specs_index(index_path)
+            locked_statuses = checker.EXECUTION_STATUSES | checker.VERIFIABLE_TERMINAL_STATUSES
+            for r in records:
+                if r.get("feature_id") == feat_name:
+                    if checker.normalize_status(r.get("status", "")) in locked_statuses:
+                        is_locked = True
+                    break
+        except Exception:
+            pass
+
+    if is_locked:
+        old_bodies = extract_adr_decision_bodies(disk_text)
+        new_bodies = extract_adr_decision_bodies(projected_text)
+        for adr_id, old_body in old_bodies.items():
+            if adr_id in new_bodies:
+                new_body = new_bodies[adr_id]
+                if old_body != new_body:
+                    return (
+                        True,
+                        f"Spec Gate Rejection: decisions.md is append-only for active/completed specs. Do not rewrite the Decision body of {adr_id} in-place; mark {adr_id} as 'Superseded' and append a new ADR section.",
+                    )
+
+    return False, ""
+
 
 
 def is_exempt_subagent(sa: Dict[str, Any]) -> bool:
@@ -436,6 +558,14 @@ def evaluate_spec_gate(payload: Dict[str, Any]) -> Dict[str, Any]:
         if resolved_target == (target_ws / "docs" / "specs" / "INDEX.md"):
             unauth, reason = is_unauthorized_status_promotion(resolved_target, args, checker, payload)
             if unauth:
+                return {"decision": "deny", "reason": reason}
+
+        # Check append-only decisions.md enforcement (REQ-033, ADR-024)
+        if resolved_target.name == "decisions.md" and resolved_target.is_relative_to(target_ws / "docs" / "specs"):
+            is_destr, reason = is_destructive_decisions_edit(
+                resolved_target, target_ws / "docs" / "specs" / "INDEX.md", args, checker
+            )
+            if is_destr:
                 return {"decision": "deny", "reason": reason}
 
         # If inside docs/specs/, allow unconditionally for specification authoring

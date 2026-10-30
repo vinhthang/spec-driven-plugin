@@ -182,6 +182,45 @@ def check_referenced_artifacts(
     return errors
 
 
+HARD_LINE_COUNT_PATTERNS = [
+    re.compile(r"(?:every|all)\s+[^\n.]{0,60}\bfiles?\b[^\n.]{0,60}(?:under|<\s*)\d+\s+lines", re.IGNORECASE),
+    re.compile(r"sub-\d+-line\s+invariant", re.IGNORECASE),
+    re.compile(r"linecount\s*<\s*\d+", re.IGNORECASE),
+]
+ADR_HEADING_PATTERN = re.compile(r"^#{1,4}\s+.*?\b(ADR-\d+)\b.*$", re.MULTILINE)
+
+
+def validate_adr_debate_structure(decisions_text: str, spec_text: str = "") -> Tuple[bool, str]:
+    """Validate structured ADR debate completeness and anti-dogma constraints (REQ-030)."""
+    has_cap_dogma = any(p.search(spec_text) or p.search(decisions_text) for p in HARD_LINE_COUNT_PATTERNS)
+    trade_re = re.compile(r"\b(trade-offs?|risks?|cons)\b", re.IGNORECASE)
+    alt_re = re.compile(r"\b(rejected\s+alternatives?|alternatives?\s+considered)\b", re.IGNORECASE)
+
+    if has_cap_dogma:
+        if not (trade_re.search(decisions_text) and alt_re.search(decisions_text)):
+            return (
+                False,
+                "Specification imposes a hard file line-count cap without debating Trade-offs/Risks and Rejected Alternatives in decisions.md",
+            )
+
+    headings = list(ADR_HEADING_PATTERN.finditer(decisions_text))
+    for i, m in enumerate(headings):
+        adr_id = m.group(1)
+        start = m.start()
+        end = headings[i + 1].start() if i + 1 < len(headings) else len(decisions_text)
+        block = decisions_text[start:end]
+        has_ctx = bool(re.search(r"(?:^|\n)\s*[-*]\s+\*\*Context\*\*:", block, re.IGNORECASE))
+        has_dec = bool(re.search(r"(?:^|\n)\s*[-*]\s+\*\*Decision\*\*:", block, re.IGNORECASE))
+        if has_ctx and has_dec:
+            if not (trade_re.search(block) and alt_re.search(block)):
+                return (
+                    False,
+                    f"{adr_id} in decisions.md is missing required 'Trade-offs & Risks' or 'Rejected Alternatives' debate section",
+                )
+
+    return True, ""
+
+
 def validate_spec_package(
     package_dir: Union[Path, str],
     verify_evidence: bool = False,
@@ -240,6 +279,10 @@ def validate_spec_package(
     has_spec_req = any(r in decisions_reqs for r in spec_reqs)
     if not has_adr and not has_spec_req:
         return False, "decisions.md must contain at least one ADR-\\d+ or declared requirement ID"
+
+    adr_ok, adr_err = validate_adr_debate_structure(decisions_content, contents["spec.md"])
+    if not adr_ok:
+        return False, adr_err
 
     if verify_evidence and (pkg / "verification.md").is_file():
         artifact_errors = check_referenced_artifacts(pkg, repo_root=repo_root)

@@ -433,6 +433,251 @@ class TestSpecGateSecurity(unittest.TestCase):
         (pkg_dir / "traceability_audit.json").write_text(json.dumps(audit_data), encoding="utf-8")
         self.assertEqual(evaluate_spec_gate(payload).get("decision"), "allow")
 
+    def test_req031_mid_flight_index_scope_expansion_gated(self):
+        """Test REQ-031: Mid-flight spec expansion on Approved rows in INDEX.md requires approval and audit."""
+        specs_dir = self.workspace / "docs" / "specs"
+        pkg_dir = specs_dir / "feat-approved"
+        pkg_dir.mkdir(parents=True, exist_ok=True)
+        (pkg_dir / "spec.md").write_text("# Spec\n- REQ-001: R1\n- REQ-009: R9\n", encoding="utf-8")
+        (pkg_dir / "decisions.md").write_text("# Decisions\nADR-001: D1\nADR-008: D8\n", encoding="utf-8")
+        (pkg_dir / "design.md").write_text("# Design\nAddresses REQ-001, REQ-009\n", encoding="utf-8")
+        (pkg_dir / "tasks.md").write_text("# Tasks\n- [ ] REQ-001\n- [ ] REQ-009\n", encoding="utf-8")
+
+        index_file = specs_dir / "INDEX.md"
+        index_file.write_text(
+            INDEX_HEADER + "| `feat-approved` | Old Title | Approved | `REQ-001` | ADR-001 | `./feat-approved/spec.md` |\n",
+            encoding="utf-8",
+        )
+
+        # 1. Editing ONLY Title remains ALLOWED even without user approval or audit
+        payload_title = {
+            "cwd": str(self.workspace),
+            "toolCall": {
+                "name": "replace_file_content",
+                "args": {
+                    "TargetFile": str(index_file),
+                    "TargetContent": "| Old Title |",
+                    "ReplacementContent": "| New Title |",
+                },
+            },
+        }
+        res_title = evaluate_spec_gate(payload_title)
+        self.assertEqual(res_title.get("decision"), "allow")
+
+        # 2. Expanding req_range without recent user approval is DENIED
+        payload_expand_req = {
+            "cwd": str(self.workspace),
+            "toolCall": {
+                "name": "replace_file_content",
+                "args": {
+                    "TargetFile": str(index_file),
+                    "TargetContent": "| `REQ-001` |",
+                    "ReplacementContent": "| `REQ-001 - REQ-009` |",
+                },
+            },
+        }
+        res_expand_no_user = evaluate_spec_gate(payload_expand_req)
+        self.assertEqual(res_expand_no_user.get("decision"), "deny")
+        self.assertIn("forbidden", res_expand_no_user.get("reason", "").lower())
+
+        # 3. Expanding key_decisions without recent user approval is DENIED
+        payload_expand_adr = {
+            "cwd": str(self.workspace),
+            "toolCall": {
+                "name": "replace_file_content",
+                "args": {
+                    "TargetFile": str(index_file),
+                    "TargetContent": "| ADR-001 |",
+                    "ReplacementContent": "| ADR-001 - ADR-008 |",
+                },
+            },
+        }
+        res_adr_no_user = evaluate_spec_gate(payload_expand_adr)
+        self.assertEqual(res_adr_no_user.get("decision"), "deny")
+
+        # 4. Expanding req_range with user approval but missing/stale traceability_audit.json is DENIED
+        transcript_file = self.workspace / "transcript.jsonl"
+        transcript_file.write_text(
+            json.dumps({"source": "USER", "type": "USER_INPUT", "content": "proceed"}) + "\n",
+            encoding="utf-8",
+        )
+        payload_expand_with_user = {
+            "cwd": str(self.workspace),
+            "transcriptPath": str(transcript_file),
+            "toolCall": {
+                "name": "replace_file_content",
+                "args": {
+                    "TargetFile": str(index_file),
+                    "TargetContent": "| `REQ-001` |",
+                    "ReplacementContent": "| `REQ-001 - REQ-009` |",
+                },
+            },
+        }
+        res_expand_no_audit = evaluate_spec_gate(payload_expand_with_user)
+        self.assertEqual(res_expand_no_audit.get("decision"), "deny")
+        self.assertIn("semantic traceability audit", res_expand_no_audit.get("reason", "").lower())
+
+        # 5. Expanding req_range with user approval AND valid traceability_audit.json is ALLOWED
+        spec_checker = spec_gate_mod.load_spec_checker()[0]
+        spec_hash = spec_checker.compute_spec_package_hash(pkg_dir, include_verification=False)
+        audit_data = {
+            "spec_hash": spec_hash,
+            "auditor_model": "claude-opus-4-6",
+            "verdict": "PASS",
+            "requirements_evaluated": {
+                "REQ-001": {
+                    "design_aligned": True,
+                    "design_rationale": "ok",
+                    "tasks_actionable": True,
+                    "tasks_rationale": "ok",
+                    "decisions_consistent": True,
+                },
+                "REQ-009": {
+                    "design_aligned": True,
+                    "design_rationale": "ok",
+                    "tasks_actionable": True,
+                    "tasks_rationale": "ok",
+                    "decisions_consistent": True,
+                },
+            },
+        }
+        (pkg_dir / "traceability_audit.json").write_text(json.dumps(audit_data), encoding="utf-8")
+        res_expand_allowed = evaluate_spec_gate(payload_expand_with_user)
+        self.assertEqual(res_expand_allowed.get("decision"), "allow")
+
+    def test_req032_scoped_goal_autonomous_approval_no_bleedover(self):
+        """Test REQ-032: Scoped /goal autonomous approval does not bleed over to subsequent questions/prompts."""
+        transcript_file = self.workspace / "transcript_goal.jsonl"
+
+        # Case 1: /goal in latest user turn returns True
+        transcript_file.write_text(
+            json.dumps({"source": "USER", "type": "USER_INPUT", "content": "/goal implement the feature"}) + "\n",
+            encoding="utf-8",
+        )
+        self.assertTrue(has_recent_user_approval({"transcriptPath": str(transcript_file)}))
+
+        # Case 2: /goal in earlier turn followed by "proceed" or "yes" returns True
+        transcript_file.write_text(
+            json.dumps({"source": "USER", "type": "USER_INPUT", "content": "/goal implement the feature"}) + "\n" +
+            json.dumps({"source": "USER", "type": "USER_INPUT", "content": "proceed"}) + "\n",
+            encoding="utf-8",
+        )
+        self.assertTrue(has_recent_user_approval({"transcriptPath": str(transcript_file)}))
+
+        # Case 3: /goal in earlier turn followed by a new question/non-approval message returns False
+        transcript_file.write_text(
+            json.dumps({"source": "USER", "type": "USER_INPUT", "content": "/goal implement the feature"}) + "\n" +
+            json.dumps({"source": "USER", "type": "USER_INPUT", "content": "I do not think this rule is good"}) + "\n",
+            encoding="utf-8",
+        )
+        self.assertFalse(has_recent_user_approval({"transcriptPath": str(transcript_file)}))
+
+        # Case 4: /goal followed by /plan returns False
+        transcript_file.write_text(
+            json.dumps({"source": "USER", "type": "USER_INPUT", "content": "/goal implement"}) + "\n" +
+            json.dumps({"source": "USER", "type": "USER_INPUT", "content": "/plan next step"}) + "\n",
+            encoding="utf-8",
+        )
+        self.assertFalse(has_recent_user_approval({"transcriptPath": str(transcript_file)}))
+
+    def test_req033_append_only_decisions_md_enforced(self):
+        """Test REQ-033: Mechanical append-only enforcement on decisions.md."""
+        specs_dir = self.workspace / "docs" / "specs"
+        pkg_dir = specs_dir / "feat-approved"
+        pkg_dir.mkdir(parents=True, exist_ok=True)
+        (pkg_dir / "spec.md").write_text("# Spec\n- REQ-001: R1\n", encoding="utf-8")
+        (pkg_dir / "design.md").write_text("# Design\nAddresses REQ-001\n", encoding="utf-8")
+        (pkg_dir / "tasks.md").write_text("# Tasks\n- [ ] REQ-001\n", encoding="utf-8")
+
+        initial_decisions = (
+            "# Architectural Decisions\n\n"
+            "## ADR-001 — Module Architecture\n"
+            "- **Status**: Accepted\n"
+            "- **Context**: Context description.\n"
+            "- **Decision**: Keep modules unified and cohesive.\n"
+            "- **Trade-offs & Risks**: File size may grow.\n"
+            "- **Rejected Alternatives**: Splitting prematurely.\n"
+        )
+        decisions_file = pkg_dir / "decisions.md"
+        decisions_file.write_text(initial_decisions, encoding="utf-8")
+
+        index_file = specs_dir / "INDEX.md"
+        index_file.write_text(
+            INDEX_HEADER + "| `feat-approved` | Title | Approved | `REQ-001` | ADR-001 | `./feat-approved/spec.md` |\n",
+            encoding="utf-8",
+        )
+
+        # 1. Deleting an existing ADR-001 identifier is DENIED
+        payload_delete_adr = {
+            "cwd": str(self.workspace),
+            "toolCall": {
+                "name": "replace_file_content",
+                "args": {
+                    "TargetFile": str(decisions_file),
+                    "TargetContent": "## ADR-001 — Module Architecture",
+                    "ReplacementContent": "## ADR-002 — Replaced Architecture",
+                },
+            },
+        }
+        res_del = evaluate_spec_gate(payload_delete_adr)
+        self.assertEqual(res_del.get("decision"), "deny")
+        self.assertIn("append-only", res_del.get("reason", "").lower())
+        self.assertIn("ADR-001", res_del.get("reason", ""))
+
+        # 2. Rewriting the Decision body of ADR-001 in-place in Approved spec is DENIED
+        payload_rewrite_body = {
+            "cwd": str(self.workspace),
+            "toolCall": {
+                "name": "replace_file_content",
+                "args": {
+                    "TargetFile": str(decisions_file),
+                    "TargetContent": "- **Decision**: Keep modules unified and cohesive.",
+                    "ReplacementContent": "- **Decision**: Split every file into 28 small files under 500 lines.",
+                },
+            },
+        }
+        res_rewrite = evaluate_spec_gate(payload_rewrite_body)
+        self.assertEqual(res_rewrite.get("decision"), "deny")
+        self.assertIn("append-only", res_rewrite.get("reason", "").lower())
+        self.assertIn("superseded", res_rewrite.get("reason", "").lower())
+
+        # 3. Marking Status as Superseded and appending ADR-002 is ALLOWED
+        superseded_edit = {
+            "cwd": str(self.workspace),
+            "toolCall": {
+                "name": "replace_file_content",
+                "args": {
+                    "TargetFile": str(decisions_file),
+                    "TargetContent": "- **Status**: Accepted",
+                    "ReplacementContent": "- **Status**: Superseded by ADR-002",
+                },
+            },
+        }
+        res_supersede = evaluate_spec_gate(superseded_edit)
+        self.assertEqual(res_supersede.get("decision"), "allow")
+
+        append_adr2 = {
+            "cwd": str(self.workspace),
+            "toolCall": {
+                "name": "write_to_file",
+                "args": {
+                    "TargetFile": str(decisions_file),
+                    "Append": True,
+                    "CodeContent": (
+                        "\n## ADR-002 — Modular Decomposition\n"
+                        "- **Status**: Accepted\n"
+                        "- **Context**: Context 2.\n"
+                        "- **Decision**: New decision for ADR-002.\n"
+                        "- **Trade-offs & Risks**: Risk 2.\n"
+                        "- **Rejected Alternatives**: Alt 2.\n"
+                    ),
+                },
+            },
+        }
+        res_append = evaluate_spec_gate(append_adr2)
+        self.assertEqual(res_append.get("decision"), "allow")
+
+
 
 if __name__ == "__main__":
     unittest.main()
