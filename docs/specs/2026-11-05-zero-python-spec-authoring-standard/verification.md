@@ -72,4 +72,4 @@
   - `rules/AGENTS.md` and `skills/spec-driven/SKILL.md` explicitly require that during Living-Spec Modification (`Extends / Modifies`), the parent spec's requirement prose and `AC-xxx` bodies remain 100% immutable (only `REQ-xxx` heading lineage tags and `INDEX.md` rows are updated).
 
 ### 4. Verification of `REQ-037` (`AC-037-1` & `AC-037-2`)
-- **Lifecycle & Synchronized 3-Way Bug Decision Protocol (`AC-037-1`, `AC-037-2`)**: Verified that `spec.md`, `rules/AGENTS.md`, and `skills/spec-driven/SKILL.md` define identical 6-state lifecycle transitions and 3-Way Bug Decision Protocol branches (explicitly noting that Case 1 and Case 2 mint 0 new `REQ` IDs).
+- **Lifecycle & Synchronized 3-Way Bug Decision Protocol (`AC-037-1`, `AC-037-2`)**: Verified that `spec.md`, `rules/AGENTS.md`, `skills/spec-driven/SKILL.md`, and `README.md` define identical 6-state lifecycle transitions and 3-Way Bug Decision Protocol branches (explicitly noting that Case 1 and Case 2 mint 0 new `REQ` IDs, while Case 3 updates/adds `REQ-xxx` IDs in-place or mints new delta `REQ-xxx` IDs in a `[MODIFIES]` delta spec).

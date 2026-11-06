@@ -255,9 +255,9 @@ When a bug, test failure, or real-world edge case is discovered during `In-Progr
   2. Set `Status` to `Planning`. In `decisions.md`, mark the broken `ADR-xxx` as `Status: Superseded by ADR-yyy` and append the new `ADR-yyy` explaining why `ADR-xxx` failed in practice.
   3. Re-run **Gate 1** (`decisions.md`), update `design.md` and `tasks.md` to reflect `ADR-yyy`, re-run **Gate 2** (`tasks.md`), and ask the human user to **"Proceed"** before resuming implementation (`In-Progress`).
 
-### Case 3: Specification Gap or Flawed Requirement *(`spec.md` missed an edge case or had a wrong requirement)*
+### Case 3: Specification Gap or Flawed Requirement *(`spec.md` missed an edge case or had a wrong requirement — Mints/Modifies REQ IDs)*
 - **Symptom**: Real-world usage reveals a missing requirement, a contradictory edge case, or a requirement in `spec.md` that produces undesirable behavior.
 - **Action**:
   1. **Stop coding. Never silently diverge from `spec.md` in code.**
-  2. Set `Status` to `Planning`. Either amend `spec.md` directly (if modifying the current feature) or create a new delta specification (`Extends / Modifies: <prior-spec-id>`) with `[MODIFIES REQ-xxx]` / `[NEW]` requirements and counterpart heading annotations (keeping the parent requirement prose frozen).
+  2. Set `Status` to `Planning`. Either amend `spec.md` directly in-place (updating existing `REQ-xxx` IDs or minting new `[NEW]` `REQ-xxx` IDs when modifying an active `Planning`/`In-Progress` spec) or create a new delta specification (`Extends / Modifies: <prior-spec-id>`) that mints new delta `REQ-xxx` IDs tagged `[MODIFIES REQ-yyy in <prior-spec-id>]` / `[NEW]` with counterpart heading annotations (keeping the parent requirement prose frozen). *(Unlike Case 1 and Case 2 fixes, which mint 0 new `REQ` IDs, Case 3 updates or mints `REQ` IDs.)*
   3. Update `decisions.md` if architectural choices change, re-run **Gate 1** (`decisions.md`), cascade updates into `design.md` and `tasks.md`, re-run **Gate 2** (`tasks.md`), and obtain human **"Proceed"** approval before coding (`In-Progress`).

@@ -26,7 +26,7 @@ $$\underbrace{\text{spec.md} > \text{decisions.md}}_{\text{Normative Source}} \x
 - **3-Way Bug Decision Protocol**:
   1. **Implementation Bug** *(Spec & Design right, Code wrong — Mints 0 new `REQ` IDs)*: Leave `spec.md` and `decisions.md` unchanged; add a reproducer task in `tasks.md` and fix via TDD Red $\to$ Green.
   2. **Design / Architecture Flaw** *(Spec right, `design.md` / `ADR-xxx` failed in practice — Mints 0 new `REQ` IDs)*: Stop coding; mark the broken ADR `Superseded by ADR-yyy` in `decisions.md`, re-run Gate 1, update `design.md` & `tasks.md`, re-run Gate 2, and get human **"Proceed"**.
-  3. **Specification Gap or Wrong Requirement** *(`spec.md` missed an edge case or had a bad requirement)*: Stop coding; amend `spec.md` (or create a `[MODIFIES]` delta spec), cascade `decisions.md` $\to$ `design.md` $\to$ `tasks.md`, run Gate 1 + Gate 2 self-checks, and get human **"Proceed"**.
+  3. **Specification Gap or Wrong Requirement** *(`spec.md` missed an edge case or had a bad requirement — Mints/Modifies `REQ` IDs)*: Stop coding; amend `spec.md` in-place (updating/adding `REQ-xxx` IDs) or create a `[MODIFIES]` delta spec (which mints new delta `REQ-xxx` IDs), cascade `decisions.md` $\to$ `design.md` $\to$ `tasks.md`, run Gate 1 + Gate 2 self-checks, and get human **"Proceed"**.
 
 ---
 
