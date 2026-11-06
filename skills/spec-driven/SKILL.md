@@ -40,12 +40,13 @@ Use disjoint lineage modes:
 - **In-Place Amendment (`Planning` or `In-Progress` specs)**: Amend the active specification directly under Case 3 and re-run Gate 1 and Gate 2.
 - **Whole-Spec Supersession (`Supersedes: <prior-spec-id>`)**: Use when retiring an earlier specification in full. All requirements in the new spec are tagged `[NEW]`. If the superseded spec directory remains in `docs/specs/`, update its `INDEX.md` row, `spec.md` header, and `decisions.md` ADRs to `Status: Superseded`.
 - **Living-Spec Modification (`Extends / Modifies: <prior-spec-id>`)**: Use when the earlier `In-Testing` or `Verified` specification remains active and only specific requirements are added (`[NEW]`), changed (`[MODIFIES REQ-xxx in <prior-spec-id>]`), or retired (`[DEPRECATED REQ-xxx in <prior-spec-id>]`).
-  - **Frozen Parent Prose Rule**: The parent specification's requirement text and `AC-xxx` bodies are **never edited**. Only a counterpart lineage annotation (`Modified by <new-spec-id>` or `Deprecated by <new-spec-id>`) on the `REQ-xxx` heading in `<prior-spec>/spec.md` and `<prior-spec>`'s row in `INDEX.md` may be appended.
+  - **Frozen Parent Prose & 1-Hop Latest-`REQ` Pointer Rule**: The parent specification's requirement text and `AC-xxx` bodies are **never edited**. Only a counterpart lineage annotation (`Modified by <latest-spec-id>/REQ-yyy` or `Deprecated by <latest-spec-id>/REQ-yyy`) on the `REQ-xxx` heading in `<prior-spec>/spec.md` and `<prior-spec>`'s row in `INDEX.md` may be appended. If a requirement is modified multiple times across successive delta specs, update the heading pointer on earlier specs so it always points directly to the **latest active `REQ-yyy`** (at most 1 hop).
 
-#### `Source Intent` Attribution Rule
+#### `Source Intent` & `[PROVISIONAL]` Rules
 Every `REQ-xxx` must include a `Source Intent` line:
 - **Direct User Intent**: Quote the user's prompt or defect observation verbatim.
 - **Standard / Architectural Derivation**: When a requirement is derived from an architectural decision or governing standard rather than a direct user quote, state `Derived from ADR-xxx (<reason>)` or `Derived from <standard-name> (<section>)`. **Never fabricate a user quote**; if a requirement has no attributable user intent or ADR derivation, stop and ask the user rather than guessing.
+- **Owner-Deferred `[PROVISIONAL]` vs. Forbidden Lazy Placeholders**: Unowned lazy placeholders (`TODO`, `TBD`, `FIXME`, vague adjectives) always fail **Gate 1 Check 4**. If the human owner explicitly defers a specific decision until the design phase, tag the requirement heading `[PROVISIONAL]` and state the open question in one sentence on the requirement; this passes Gate 1 so `design.md` and `tasks.md` can be drafted, but blocks `In-Progress` code execution of the affected task until the owner resolves the question.
 
 ```markdown
 # Specification: <Feature Title>
@@ -115,9 +116,9 @@ Explicitly list what this specification will NOT do, change, or solve.
 | **1. Codebase Grounding** | `PASS` | <Exact existing files/symbols inspected> |
 | **2. User Intent & Non-Goals** | `PASS` | <Every REQ cites honest Source Intent (user quote or ADR derivation); explicit Non-Goals listed> |
 | **3. EARS & Falsifiable ACs** | `PASS` | <Every REQ uses EARS syntax with both Happy Path and Error/Boundary ACs> |
-| **4. Zero Deferral Placeholders** | `PASS` | <Zero unresolved deferral placeholders in spec.md and decisions.md> |
+| **4. Zero Deferral Placeholders** | `PASS` | <Zero unowned TODO/TBD placeholders; any owner-deferred decision is tagged [PROVISIONAL] with a 1-sentence open question> |
 | **5. Anti-Strawman ADR Debate** | `PASS` | <Every ADR compares >= 2 viable options with Trade-offs & Rejected Alternatives> |
-| **6. Cross-Spec Lineage & Cascade** | `PASS` | <Type, Version, and Lineage headers present; counterpart INDEX.md / spec.md / decisions.md files updated> |
+| **6. Cross-Spec Lineage & Cascade** | `PASS` | <Type, Version, and Lineage headers present; 1-hop counterpart INDEX.md / spec.md / decisions.md pointers updated> |
 ```
 
 ---
@@ -129,9 +130,9 @@ Explicitly list what this specification will NOT do, change, or solve.
 - [ ] **1. Codebase Grounding**: Did I read the real codebase files and verify that `spec.md` and `decisions.md` reference real modules and symbols?
 - [ ] **2. User Intent & Non-Goals**: Does every `REQ-xxx` cite an honest `Source Intent` (verbatim user quote or explicit ADR/standard derivation, never a fabricated quote), and does `spec.md` include a non-empty `## Non-Goals` section?
 - [ ] **3. EARS & Falsifiable ACs**: Is every `REQ-xxx` written in EARS notation with at least one Happy-Path `AC-xxx` and one Error/Boundary `AC-xxx`?
-- [ ] **4. Zero Deferral Placeholders**: Are `spec.md` and `decisions.md` 100% free of unresolved deferral markers?
+- [ ] **4. Zero Deferral Placeholders**: Are `spec.md` and `decisions.md` 100% free of unowned lazy deferral markers (`TODO`, `TBD`, `FIXME`), with any owner-deferred decision explicitly tagged `[PROVISIONAL]` and described in one sentence?
 - [ ] **5. Anti-Strawman ADRs**: Does every `ADR-xxx` evaluate at least 2 realistic options and state concrete `Trade-offs & Risks` and `Rejected Alternatives` (preserving old ADR bodies append-only)?
-- [ ] **6. Cross-Spec Consistency & Counterpart Cascade**: Does `spec.md` declare `Type`, `Version`, and `Lineage` (`Extends / Modifies` and `Supersedes`) in its header, and if it supersedes or modifies a prior spec, are the delta tags and counterpart files (`INDEX.md`, `<prior-spec>/spec.md` heading annotations with frozen requirement prose, `<prior-spec>/decisions.md`) updated consistently?
+- [ ] **6. Cross-Spec Consistency & 1-Hop Counterpart Cascade**: Does `spec.md` declare `Type`, `Version`, and `Lineage` (`Extends / Modifies` and `Supersedes`) in its header, and if it supersedes or modifies a prior spec, are the delta tags and 1-hop counterpart pointers (`INDEX.md`, `<prior-spec>/spec.md` `Modified by <latest-spec-id>/REQ-yyy` heading annotations with frozen requirement prose, `<prior-spec>/decisions.md`) updated consistently?
 
 *If any check fails, fix `spec.md` or `decisions.md` first. Do NOT proceed to `design.md` or `tasks.md` while Gate 1 has any failing row.*
 
