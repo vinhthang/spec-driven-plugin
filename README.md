@@ -1,60 +1,51 @@
-# Spec-Driven Plugin
+# Spec-Driven Plugin (`spec-standard`)
 
-Mechanical specification governance, 5-Document Architecture enforcement, and Opus-backed semantic traceability verification for Google Antigravity.
-
----
-
-## Architecture Overview
-
-`spec-driven-plugin` enforces the **5-Document Architecture** across repositories containing `docs/specs/INDEX.md`:
-
-1. **`spec.md`**: Normative requirements (`REQ-\d+`, `FLOW-\d+`, `ALIGN-\d+`) and testable acceptance criteria (`AC-xxx`).
-2. **`decisions.md`**: Architecture Decision Records (`ADR-\d+`) capturing explicit design rationale.
-3. **`design.md`**: Revisable architectural blueprint mapping every declared requirement ID.
-4. **`tasks.md`**: Actionable implementation checklist mapped to requirement IDs.
-5. **`verification.md`**: Verbatim test execution and line-count evidence recorded during Phase 2 verification.
-
-### Two-Stage Verification Pipeline
-
-| Stage | Engine | Latency | Responsibility |
-| :--- | :--- | :--- | :--- |
-| **Stage 1: Structural & Syntax Check** | `scripts/spec_checker.py` (Python) | `~5ms` | Validates 6-column `INDEX.md` table (with escaped pipe `\|` support), path traversal & root containment (`resolve_package_dir`), non-empty 4-document planning baseline, and declared requirement ID citations across documents. |
-| **Stage 2: Semantic Traceability Audit** | `agents/traceability-auditor.md` (Opus) / `scripts/semantic_checker.py` | Cached via SHA-256 (`<1ms` hook check) | Evaluates whether `design.md` substantively designs each `REQ-xxx`, `tasks.md` defines actionable work, `decisions.md` is consistent, and `verification.md` proves acceptance criteria. Writes `<package_dir>/traceability_audit.json` keyed by `spec_hash` and `evidence_hash`. |
+Zero-Python, 100% Markdown specification authoring standard for Google Antigravity. Focuses on helping models write crisp, code-grounded, falsifiable specifications using the **5-Document Architecture**, **Two-Stage Self-Validation**, **Cross-Spec Delta Lineage**, **Real-World Testing (`In-Testing` vs. `Verified`)**, and the **3-Way Bug Decision Protocol**.
 
 ---
 
-## Components
+## Core Architecture: Normative Source vs. Derived Files
 
-### 1. Pre-Tool Mechanical Gate (`scripts/spec-gate.py` & `hooks.json`)
-Intercepts `invoke_subagent`, `write_to_file`, `replace_file_content`, and `multi_replace_file_content`:
-- **Multi-Workspace & `workspacePaths` Resolution**: Resolves the governing workspace root from `payload["workspacePaths"]`, `AGY_ACTIVE_WORKSPACE`, `payload["cwd"]`, or target file ancestors (`.git` / `docs/specs`).
-- **Specification Authoring Exemption**: Allows creating and editing files under `docs/specs/` during Phase 1 planning.
-- **Anti-Self-Approval & Semantic Promotion Gate**: Blocks promoting a feature to `Approved`, `In-Progress`, or `Active` in `docs/specs/INDEX.md` unless:
-  1. Explicit human approval (`"Proceed"` / `"Approved"`) is recorded in the latest `USER_INPUT` step of `transcriptPath` (or `SPEC_GATE_ALLOW_APPROVAL=1`), **and**
-  2. `<package_dir>/traceability_audit.json` passes `validate_semantic_traceability()` with a high-reasoning auditor model (Opus-class or Gemini 3.8 Flash High; Flash tiers below High are mechanically rejected, per ADR-012).
-- **Subagent Model Guard**: Allows `traceability-auditor` (`TypeName="traceability-auditor"`) to run during Phase 1 planning, but denies dispatch if `Model` names a Flash tier below High (`"flash"`, `"flash_lite"`, `*-flash-medium`, `*-flash-low`).
-- **Global Configuration Path Allowance (`REQ-026`)**: `spec-gate.py` permits `~/.gemini/config/{rules,scripts,skills,hooks.json}` paths per `RULE[workspace-boundary]`.
-- **`/goal` Autonomous Mode & Antigravity 2.0 Tool Schema Parity (`REQ-027`)**: `spec-gate.py` recognizes `/goal` invocations in `has_recent_user_approval()` per `RULE[explicit-approval]` and gates both legacy (`write_to_file`, `replace_file_content`, `Subagents`) and Antigravity 2.0 (`write_file`, `edit_file` with `Path`, flat `invoke_subagent`) schemas.
+$$\underbrace{\text{spec.md} > \text{decisions.md}}_{\text{Normative Source}} \xrightarrow{\text{Gate 1 Self-Check}} \underbrace{\text{design.md} > \text{tasks.md}}_{\text{Derived Blueprint}} \xrightarrow{\text{Gate 2 Self-Check}} \text{Human "Proceed"} \longrightarrow \underbrace{\text{verification.md}}_{\text{Empirical Falsifier}}$$
 
-### 2. Specification & Semantic Checker (`scripts/spec_checker.py` & `scripts/semantic_checker.py`)
-```bash
-python3 scripts/spec_checker.py --workspace . [--feature <id>] [--allow-planning] [--verify-evidence] [--semantic] [--json]
-```
-- `--allow-planning`: Accepts `Draft`, `Planning`, and `Review` statuses during Phase 1.
-- `--verify-evidence`: Requires `verification.md` and validates `evidence_hash` in `traceability_audit.json` when present.
-- `--semantic`: Enforces `validate_semantic_traceability()` (and invokes the configured CLI agent if `traceability_audit.json` is missing).
-- **Referenced Artifact Existence & Compilation Gate (`REQ-024`)**: `--verify-evidence` runs `check_referenced_artifacts()` to verify every relative `scripts/*.py` and `tests/*.py` path cited in `verification.md` exists on disk and passes `compile()`.
-- **Domain-Prefixed Requirement IDs (`REQ-025`)**: `REQ_ID_PATTERN` supports both `REQ-001` and domain-prefixed IDs (`REQ-AE-001`, `REQ-DSL-001`, `REQ-TOC-1`, `REQ-MOD-EVAL-1`, `REQ-2STG-1`).
-
-### 3. Rules, Skills & Agents
-- [`rules/spec-standard.md`](rules/spec-standard.md): Authoritative `spec-standard` governance rule.
-- [`skills/spec-standard/SKILL.md`](skills/spec-standard/SKILL.md): Templates and scaling switches for the 5-Document Architecture.
-- [`agents/traceability-auditor.md`](agents/traceability-auditor.md): Opus-tier (`model_role: strongest`) subagent that audits specification packages and writes `traceability_audit.json`. Declares `tools: [read_file, view_file, write_file, write_to_file]` (`REQ-023`).
+1. **`spec.md` (Normative Requirements)**: Intent attribution, explicit `## Non-Goals`, cross-spec lineage (`[NEW]`, `[MODIFIES REQ-xxx]`, `[DEPRECATED REQ-xxx]`), and EARS requirements (`WHEN / IF / WHILE ... THE <system> SHALL ...`) paired with falsifiable `AC-xxx` criteria.
+2. **`decisions.md` (Append-Only ADRs)**: Compares $\ge 2$ viable technical designs on blast radius, coupling, and complexity (no strawman alternatives). Replaced decisions are marked `Superseded by ADR-yyy`.
+3. **`design.md` (Derived Code Blueprint)**: Exact files, symbols, interfaces, and error-handling flows derived from `spec.md` + `decisions.md`.
+4. **`tasks.md` (Derived TDD Checklist)**: Red $\to$ Green $\to$ Refactor task items mapped 1-to-1 to `REQ-xxx`.
+5. **`verification.md` (Empirical Falsifier)**: Verbatim test and CLI output mapped to `REQ-xxx` and `AC-xxx`.
 
 ---
 
-## Running Tests
+## Key Governance Pillars
 
-```bash
-rtk pytest -v
-```
+- **Two-Stage Self-Validation**:
+  - **Gate 1 (Before Writing Derived Files)**: Self-validate `spec.md` and `decisions.md` before generating `design.md` or `tasks.md`.
+  - **Gate 2 (Before Asking Human to "Proceed")**: Verify 1-to-1 forward and backward traceability across `design.md` and `tasks.md` (zero gold-plating).
+- **Post-Implementation Dogfooding Lifecycle**:
+  - `Planning` $\to$ `In-Progress` $\to$ **`In-Testing`** *(Dogfooding after agent finishes code & unit tests)* $\to$ **`Verified`** *(only after real-world usage and human sign-off)*.
+- **3-Way Bug Decision Protocol**:
+  1. **Implementation Bug** *(Spec & Design right, Code wrong)*: Leave `spec.md` and `decisions.md` unchanged; add a reproducer task in `tasks.md` and fix via TDD Red $\to$ Green.
+  2. **Design / Architecture Flaw** *(Spec right, `design.md` / `ADR-xxx` failed in practice)*: Stop coding; mark the broken ADR `Superseded by ADR-yyy` in `decisions.md`, update `design.md` & `tasks.md`, re-run Gate 2 self-check, and get human **"Proceed"**.
+  3. **Specification Gap or Wrong Requirement** *(`spec.md` missed an edge case or had a bad requirement)*: Stop coding; amend `spec.md` (or create a `[MODIFIES]` delta spec), cascade `decisions.md` $\to$ `design.md` $\to$ `tasks.md`, run Gate 1 + Gate 2 self-checks, and get human **"Proceed"**.
+
+---
+
+## Bundled Files
+- [`plugin.json`](plugin.json): Plugin manifest.
+- [`rules/spec-standard.md`](rules/spec-standard.md): Concise always-on governance rule and skill trigger.
+- [`skills/spec-standard/SKILL.md`](skills/spec-standard/SKILL.md): Complete authoring playbook, EARS syntax guide, drop-in 5-Document templates, self-validation checklists, and bug decision tree.
+
+---
+
+## Legacy CLI & Hook Migration (`v1.x` $\to$ `v2.0`)
+
+All Python scripts, hooks, and subagent manifests from `REQ-001` – `REQ-033` (`2026-10-18` through `2026-10-30`) are **superseded and retired** by [`2026-11-05-zero-python-spec-authoring-standard`](docs/specs/2026-11-05-zero-python-spec-authoring-standard/spec.md):
+
+| Retired `v1.x` Artifact / Command | `v2.0` Pure-Markdown Replacement |
+| :--- | :--- |
+| `scripts/spec_checker.py --init <feature-id>` | Scaffold `docs/specs/<feature-id>/{spec.md,decisions.md,design.md,tasks.md,verification.md}` using the copy-ready templates in `skills/spec-standard/SKILL.md`. |
+| `scripts/spec_checker.py` & `scripts/semantic_checker.py` | Complete the written **Gate 1 Self-Validation Table** in `decisions.md` and the written **Gate 2 Traceability Matrix** in `tasks.md`. |
+| `traceability_audit.json` & `agents/traceability-auditor.md` | Replaced by the inline **Gate 1** (`decisions.md`) and **Gate 2** (`tasks.md`) Markdown tables and explicit human `Sign-off` in `spec.md`. |
+| `scripts/spec_checker.py --close <feature-id>` | Transition status in `INDEX.md` and `spec.md` to `In-Testing` upon completing `tasks.md` and `verification.md`, and to `Verified` after human sign-off. |
+| `hooks.json` & `scripts/spec-gate.py` | Governed by `rules/spec-standard.md` and explicit human `"Proceed"` approval recorded in `spec.md`'s `Sign-off` header. |
+

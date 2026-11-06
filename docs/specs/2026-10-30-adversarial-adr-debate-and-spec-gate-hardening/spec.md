@@ -1,7 +1,7 @@
 # Specification: Adversarial ADR Debate, Anti-Dogma Auditing & Spec-Gate Lifecycle Hardening
 
 **Feature ID**: `2026-10-30-adversarial-adr-debate-and-spec-gate-hardening`  
-**Status**: `Implemented`  
+**Status**: `Superseded` (by [`2026-11-05-zero-python-spec-authoring-standard`](../2026-11-05-zero-python-spec-authoring-standard/spec.md))  
 **Created**: `2026-10-30`  
 **Version**: `1.0.0`  
 **Precedence**: `spec.md` > `decisions.md` > `design.md` > `tasks.md`

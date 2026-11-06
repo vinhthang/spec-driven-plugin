@@ -1,52 +1,37 @@
----
-trigger: always_on
-description: "Enforces 5-Document Architecture precedence, ADR decisions.md, and requirement ID traceability when planning and authoring specifications."
----
-
 <rule name="spec-standard">
 <description>
-Enforces precedence order, requirement ID traceability, and authority boundaries when authoring specifications in docs/. For detailed templates and directory layouts, see skill spec-standard.
+Governs how to write, self-validate, evolve, and test feature specifications using the 5-Document Architecture (spec.md, decisions.md, design.md, tasks.md, verification.md). Pure Markdown guidance — zero Python hooks.
 </description>
 
-<scope>
-- **Mandatory (5-Document Architecture)**: Multi-file features, architectural refactors, public API changes, or whenever `/plan` is invoked. Touching >=2 code files, adding/modifying CLI switches/arguments, altering public APIs, or changing data schemas strictly invalidates the fast path.
-- **Exempt (Fast Path)**: Single-file typo fixes, 1-line bug fixes with regression tests, or minor config adjustments touching <= 1 file remain exempt.
-- **Mechanical Gate Scope**: In repositories containing `docs/specs/`, `scripts/spec-gate.py` mechanically requires an active execution-authorized spec (`Approved`, `In-Progress`, or `Active`) in `docs/specs/INDEX.md` for all workspace file edits outside `docs/specs/`. The fast path applies in repositories without `docs/specs/` or when an execution-authorized specification is active.
-</scope>
-
 <constraints>
-- **The 5-Document Architecture**:
-  1. `spec.md`: What must be true (Living, versioned, human-approved).
-  2. `decisions.md`: What has been explicitly decided (ADR rationale, append-only).
-  3. `design.md`: How we intend to build it (Revisable architecture blueprint).
-  4. `tasks.md`: What remains to be done (Execution checklist).
-  5. `verification.md`: Verbatim evidence that it works (Append-only per run).
-- **Mandatory Planning Package & Verification Boundary**:
-  - The 4-document set (`spec.md`, `decisions.md`, `design.md`, `tasks.md`) forms the mandatory planning baseline verified by `spec_checker.py` before any code mutation or subagent execution.
-  - `verification.md` is mandatory during Phase 2 verification to record verbatim test evidence mapped to requirement IDs.
-- **Human Approval Authority Boundary**:
-  - Transitioning a specification to `Approved`, `In-Progress`, or `Active` in `docs/specs/INDEX.md` requires explicit human consent ("Proceed").
-  - Autonomous agents operating in planning mode are strictly forbidden from self-promoting specifications to execution-authorized statuses.
-- **User Execution Constraints != Phase Skips**: Direct instructions describing execution parameters ("update the code but do not recompile", "run in background") specify negative or procedural constraints, NEVER an authorization to bypass Phase 1 (Planning & Specification).
-- **Planning Phase Integration & Standalone Fallbacks**:
-  - When `/grill-me` precedes `/plan`, it establishes `spec.md` and `decisions.md` (the ADR).
-  - When `/plan` is invoked, author `design.md` and `tasks.md`. If invoked without `/grill-me`, scaffold `spec.md`, `decisions.md`, and `design.md` together under `docs/specs/<feature-id>/`.
-  - **Standalone Fallback**: If slash commands (`/grill-me`, `/plan`) or external review plugins are absent, agents conduct requirements interviews directly, author the 4-document package under `docs/specs/<feature-id>/`, register it in `docs/specs/INDEX.md` as `Draft` or `Planning`, and prompt the user for explicit "Proceed" confirmation.
-  - The ephemeral plan artifact in the brain directory is an operational dashboard derived from in-repo documents. Approving the plan confirms human sign-off on underlying `spec.md`, `decisions.md`, and `design.md`.
-  - **Slash Command Precedence**: When `/plan` is invoked, the repository's 5-Document Architecture (`docs/specs/<feature-id>/` and `docs/specs/INDEX.md`) takes strict precedence over any built-in or default IDE plan template (e.g. generic `<PLAN>` artifact guidelines). The Primary Agent MUST author the in-repo specification files first before or concurrently with deriving the ephemeral `implementation_plan.md` artifact dashboard.
-  - **No Artifact Chat Redundancy**: Do not dump or re-summarize implementation plan markdown into the chat response; link to the artifact and present key decisions and next steps per `RULE[reasoning-quality]`.
-- **Precedence Order & Invalidation**:
-  - `spec.md` > `decisions.md` > `design.md` > `tasks.md`. `verification.md` can invalidate any document, but may never redefine normative requirements in `spec.md`.
-  - When `verification.md` records an assertion break against a `REQ-xxx`, execution immediately halts and routes to Root Cause Diagnosis.
-- **Requirement ID Traceability**: Every requirement MUST have a stable ID (e.g. `REQ-001`) with testable acceptance criteria in `spec.md`. That ID must be cited in `decisions.md`, `design.md`, `tasks.md`, and `verification.md`. Evidence without an ID is unaccounted activity.
-- **Structured ADR Debate & Anti-Dogma (`REQ-030`)**: Structured multi-section ADR blocks in `decisions.md` containing `Context` and `Decision` markers must include explicit `Trade-offs & Risks` (or `Trade-offs`/`Risks`/`Cons`) and `Rejected Alternatives` (or `Alternatives Considered`). Specifications imposing hard source-file line-count caps without debated trade-offs and rejected alternatives are rejected.
-- **Conflict Resolution**: When documents contradict, STOP work and apply precedence. Propose design adjustments; never silently weaken `spec.md` to match an implementation or test.
-- **Review Input Boundary**: Peer reviews evaluate normative contracts (`spec.md`, `design.md`, `decisions.md`). Operational execution checklists (`tasks.md`, `verification.md`) are excluded from peer review inputs.
-- **IDE Approval Conduit**: Ephemeral `implementation_plan.md` in the artifact directory is an operational dashboard derived strictly from underlying spec documents. Approving the plan confirms human sign-off on underlying `spec.md`, `decisions.md`, and `design.md`.
+- **1. Normative Authority & Primary Agent Boundary**:
+  - **Normative Source (`spec.md` > `decisions.md`)**: Defines *what* (`REQ-xxx`, `AC-xxx`, `Non-Goals`) and *why* (`ADR-xxx`).
+  - **Derived Blueprint (`design.md` > `tasks.md` > `verification.md`)**: Never write or update `design.md` or `tasks.md` before self-validating `spec.md` and `decisions.md`.
+  - **Primary Agent Boundary**: The Primary Agent authors `.md` specification files and never modifies source code or the runtime environment directly; delegate all code, test, build, and runtime changes to subagents after human `"Proceed"`.
+- **2. Five Spec-Writing Quality Invariants**:
+  - **Codebase Grounding**: Read existing files/symbols before writing `spec.md`. Never invent phantom APIs or duplicate existing abstractions.
+  - **Intent Attribution & Non-Goals**: Every `REQ-xxx` must cite its `Source Intent` (verbatim user prompt or defect observation). Every `spec.md` must declare explicit `## Non-Goals` to prevent scope creep.
+  - **EARS & Falsifiable Acceptance Criteria**: Every `REQ-xxx` must use EARS syntax (`WHEN / IF / WHILE ... THE <system> SHALL ...`) paired with observable `AC-xxx` criteria covering both happy paths and error/boundary cases. No vague adjectives or unresolved deferral placeholders.
+  - **Anti-Strawman ADR Debate**: Every `ADR-xxx` in `decisions.md` must compare $\ge 2$ viable technical options on blast radius, coupling, and maintenance cost. `decisions.md` is append-only (`Status: Superseded by ADR-yyy`, never overwritten in-place).
+  - **Cross-Spec Lineage & Counterpart Cascade**:
+    - Specifications in `Planning` or `In-Progress` are amended in-place (via Case 3).
+    - **Whole-Spec Supersession (`Supersedes: <spec-id>`)**: Retires the prior specification in full; all requirements in the new spec are tagged `[NEW]`, and the prior spec's `INDEX.md` row, `spec.md` status, and `decisions.md` ADRs must be updated to `Superseded`.
+    - **Living-Spec Modification (`Extends / Modifies: <spec-id>`)**: Keeps the prior `In-Testing` or `Verified` specification active, tags individual changed/retired requirements in the delta spec per-ID (`[MODIFIES REQ-xxx in <spec-id>]` with `Previous Contract`, or `[DEPRECATED REQ-xxx in <spec-id>]` with `Deprecation & Migration Reason`), and annotates the counterpart `REQ-xxx` heading in `<prior-spec>/spec.md` (`Modified by <new-spec-id>` / `Deprecated by <new-spec-id>`) and `<prior-spec>`'s row in `INDEX.md`.
+- **3. Two-Stage Self-Validation Gate (With Written Receipt Tables)**:
+  - **Gate 1 (Before Writing Derived Files)**: Self-validate `spec.md` and `decisions.md` against all 6 checks (Codebase Grounding, Intent & Non-Goals, EARS & Falsifiable ACs, Zero Deferral Placeholders, Anti-Strawman ADR Debate, and Cross-Spec Lineage/Cascade) and record a completed `## Gate 1: Normative Source Self-Validation` table in `decisions.md` before authoring `design.md`, `tasks.md`, or `verification.md`.
+  - **Gate 2 (Before Asking Human to "Proceed")**: Self-validate `design.md`, `tasks.md`, and `verification.md` against `spec.md` and `decisions.md` (1-to-1 per-AC mapping, zero gold-plating, zero stale paths) and record a completed `## Gate 2: Derived File Self-Validation & Traceability Matrix` table in `tasks.md` before asking the human user to `"Proceed"`.
+  - If any Gate 1 or Gate 2 check fails or is omitted, the specification remains in (or reverts to) `Planning` and code execution is blocked.
+- **4. Six-State Specification Lifecycle (`In-Testing` Is Not `Verified`)**:
+  - `Planning` $\to$ `In-Progress` *(requires Gate 1 + Gate 2 `PASS` and explicit human `"Proceed"` recorded in `spec.md` `Sign-off`)* $\to$ **`In-Testing`** *(all `- [x]` tasks complete and automated test output recorded in `verification.md`; real-world dogfooding active)* $\to$ **`Verified`** *(only after real-world usage and explicit human sign-off recorded in `spec.md` `Sign-off`)*.
+  - Discovering a bug in `In-Testing` or `Verified` transitions the spec to `In-Progress` (Case 1) or `Planning` (Case 2 / Case 3) until resolved and re-verified. Replaced specs are `Superseded`; cancelled specs are `Abandoned`.
+  - Never mark a specification `Verified` immediately after unit tests pass without human sign-off.
+- **5. 3-Way Bug Decision Protocol**:
+  - **Case 1 — Implementation Bug** *(Spec & Design are right; Code/Test is wrong)*: Do NOT edit `spec.md` or `decisions.md`. Set status to `In-Progress`, add an unchecked `- [ ]` reproducer task in `tasks.md` citing `REQ-xxx`, fix via TDD Red $\to$ Green, check off `- [x]`, append verification run to `verification.md`, and set status to `In-Testing`.
+  - **Case 2 — Design / Architecture Flaw** *(Spec is right; `design.md` or `ADR-xxx` failed in practice)*: Stop coding. Set status to `Planning`, mark the flawed ADR `Superseded by ADR-yyy` in `decisions.md`, append `ADR-yyy`, re-run Gate 1 (`decisions.md`), update `design.md` and `tasks.md`, re-run Gate 2 (`tasks.md`), and obtain human `"Proceed"` before coding (`In-Progress`).
+  - **Case 3 — Specification Gap or Flawed Requirement** *(`spec.md` missed an edge case or had a wrong requirement)*: Stop coding. Set status to `Planning`, amend `spec.md` (or create a `[MODIFIES]` delta spec), update `decisions.md` if needed, re-run Gate 1 (`decisions.md`), cascade updates to `design.md` and `tasks.md`, re-run Gate 2 (`tasks.md`), and obtain human `"Proceed"` before coding (`In-Progress`).
 </constraints>
 
 <instructions>
-- Organize feature workstreams under `docs/specs/<feature-id>/` and register feature IDs in `docs/specs/INDEX.md`.
-- Follow the 5-Document Architecture templates and scaling switches in `skill: spec-standard`.
+- When authoring, updating, reviewing, or triaging a feature specification in `docs/specs/`, consult skill `spec-standard`.
 </instructions>
 </rule>

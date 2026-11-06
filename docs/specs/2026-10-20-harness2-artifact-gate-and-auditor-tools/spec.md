@@ -1,5 +1,8 @@
 # Specification: Harness² Referenced Artifact Verification Gate & Traceability Auditor Tool Permissions
 
+- **Feature ID**: `2026-10-20-harness2-artifact-gate-and-auditor-tools`
+- **Status**: `Superseded` (by [`2026-11-05-zero-python-spec-authoring-standard`](../2026-11-05-zero-python-spec-authoring-standard/spec.md))
+
 ## 1. Overview & Context
 In [`google-research/harness2`](https://github.com/google-research/harness2), `harness2/core/tree.py::validate` verifies that every relative file path referenced in documentation exists in the workspace and that every Python script compiles cleanly. Additionally, `agents/traceability-auditor.md` in `spec-driven-plugin` declared only `tools: [write_to_file]`, omitting `read_file`, `view_file`, and `write_file`. Finally, `spec_checker.py` required support for domain-prefixed requirement IDs (`REQ-AE-001`, `REQ-DSL-001`) and `spec-gate.py` required explicit allowance for global Antigravity configuration files under `~/.gemini/config/`.
 

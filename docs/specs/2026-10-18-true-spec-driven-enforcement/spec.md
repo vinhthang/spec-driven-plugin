@@ -1,7 +1,7 @@
 # Specification: True Spec-Driven Enforcement & Traceability
 
 - **Feature ID**: `2026-10-18-true-spec-driven-enforcement`
-- **Status**: `Implemented`
+- **Status**: `Superseded` (by [`2026-11-05-zero-python-spec-authoring-standard`](../2026-11-05-zero-python-spec-authoring-standard/spec.md))
 - **Version**: `1.2.0`
 - **Date**: `2026-10-18`
 

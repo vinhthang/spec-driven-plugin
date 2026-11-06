@@ -1,7 +1,7 @@
 # Specification: SDD Lifecycle Automation, Checkbox Hash Normalization & EARS Governance
 
 - **Feature ID**: `2026-10-19-sdd-lifecycle-and-ears-evolution`
-- **Status**: `Planning`
+- **Status**: `Superseded` (by [`2026-11-05-zero-python-spec-authoring-standard`](../2026-11-05-zero-python-spec-authoring-standard/spec.md))
 - **Version**: `1.0.0`
 - **Date**: `2026-10-19`
 
