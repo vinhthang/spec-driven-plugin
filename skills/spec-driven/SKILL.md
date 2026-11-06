@@ -1,9 +1,9 @@
 ---
-name: spec-standard
+name: spec-driven
 description: Author, self-validate, and maintain high-signal feature specifications using the 5-Document Architecture, EARS syntax, cross-spec delta lineage, In-Testing lifecycle, and the 3-way bug decision protocol.
 ---
 
-# Specification Authoring & Lifecycle Playbook (`spec-standard`)
+# Specification Authoring & Lifecycle Playbook (`spec-driven`)
 
 A specification is only useful if it makes requirements unambiguous, architectural trade-offs explicit, and downstream implementation verifiable. This skill governs how to author, self-validate, evolve, and test specifications in `docs/specs/<feature-id>/` with **zero Python ceremony**.
 
@@ -15,8 +15,8 @@ $$\underbrace{\text{spec.md} > \text{decisions.md}}_{\text{Normative Source (Aut
 
 | Document | Role | Authority Level |
 | :--- | :--- | :--- |
-| `docs/specs/INDEX.md` | Central catalog of all specifications and their current lifecycle status. | Registry |
-| `spec.md` | Normative requirements (`REQ-xxx`), acceptance criteria (`AC-xxx`), `Non-Goals`, `Sign-off`, and cross-spec lineage. | **Highest (Normative)** |
+| `docs/specs/INDEX.md` | Central 6-column catalog of all specifications and their current lifecycle status (`Feature ID \| Title \| Status \| REQ Range \| Key Decisions \| Spec Path`). | Registry |
+| `spec.md` | Normative requirements (`REQ-xxx`), acceptance criteria (`AC-xxx`), `Non-Goals`, `Sign-off`, `Type`, `Version`, and cross-spec `Lineage`. | **Highest (Normative)** |
 | `decisions.md` | Append-only Architecture Decision Records (`ADR-xxx`), trade-off debates, and **Gate 1 Self-Validation Table**. | **Normative** |
 | `design.md` | Concrete file/symbol blast radius, data structures, interfaces, and error-handling flows derived from `spec.md` + `decisions.md`. | Derived Blueprint |
 | `tasks.md` | Actionable TDD execution checklist (`- [ ]` / `- [x]`) and **Gate 2 Traceability Matrix** mapped 1-to-1 to `REQ-xxx` and `AC-xxx`. | Derived Checklist |
@@ -34,17 +34,24 @@ Before creating or editing `spec.md`:
 
 ## 3. Step 2: Author the Normative Source (`spec.md` & `decisions.md`)
 
-### 3.1 `spec.md` Template (With Lineage, Sign-Off & Delta Tags)
+### 3.1 `spec.md` Template (With Type, Version, Lineage, Sign-Off & Delta Tags)
 
 Use disjoint lineage modes:
 - **In-Place Amendment (`Planning` or `In-Progress` specs)**: Amend the active specification directly under Case 3 and re-run Gate 1 and Gate 2.
-- **Whole-Spec Supersession (`Supersedes: <prior-spec-id>`)**: Use when retiring an earlier specification in full. All requirements in the new spec are tagged `[NEW]`. Update the superseded spec's `INDEX.md` row, `spec.md` header, and `decisions.md` ADRs to `Status: Superseded`.
-- **Living-Spec Modification (`Extends / Modifies: <prior-spec-id>`)**: Use when the earlier `In-Testing` or `Verified` specification remains active and only specific requirements are added (`[NEW]`), changed (`[MODIFIES REQ-xxx in <prior-spec-id>]`), or retired (`[DEPRECATED REQ-xxx in <prior-spec-id>]`). Annotate the modified/deprecated `REQ-xxx` heading in `<prior-spec>/spec.md` and update `<prior-spec>`'s row in `INDEX.md`.
+- **Whole-Spec Supersession (`Supersedes: <prior-spec-id>`)**: Use when retiring an earlier specification in full. All requirements in the new spec are tagged `[NEW]`. If the superseded spec directory remains in `docs/specs/`, update its `INDEX.md` row, `spec.md` header, and `decisions.md` ADRs to `Status: Superseded`.
+- **Living-Spec Modification (`Extends / Modifies: <prior-spec-id>`)**: Use when the earlier `In-Testing` or `Verified` specification remains active and only specific requirements are added (`[NEW]`), changed (`[MODIFIES REQ-xxx in <prior-spec-id>]`), or retired (`[DEPRECATED REQ-xxx in <prior-spec-id>]`).
+  - **Frozen Parent Prose Rule**: The parent specification's requirement text and `AC-xxx` bodies are **never edited**. Only a counterpart lineage annotation (`Modified by <new-spec-id>` or `Deprecated by <new-spec-id>`) on the `REQ-xxx` heading in `<prior-spec>/spec.md` and `<prior-spec>`'s row in `INDEX.md` may be appended.
+
+#### `Source Intent` Attribution Rule
+Every `REQ-xxx` must include a `Source Intent` line:
+- **Direct User Intent**: Quote the user's prompt or defect observation verbatim.
+- **Standard / Architectural Derivation**: When a requirement is derived from an architectural decision or governing standard rather than a direct user quote, state `Derived from ADR-xxx (<reason>)` or `Derived from <standard-name> (<section>)`. **Never fabricate a user quote**; if a requirement has no attributable user intent or ADR derivation, stop and ask the user rather than guessing.
 
 ```markdown
 # Specification: <Feature Title>
 
 - **Feature ID**: `<YYYY-MM-DD-feature-slug>`
+- **Type**: `new feature` <!-- new feature | enhancement | fix | refactor -->
 - **Status**: `Planning` <!-- Planning | In-Progress | In-Testing | Verified | Superseded | Abandoned -->
 - **Version**: `1.0.0`
 - **Sign-off**: `Pending human "Proceed" approval`
@@ -61,7 +68,7 @@ Explicitly list what this specification will NOT do, change, or solve.
 ## 3. Normative Requirements (EARS Syntax)
 
 ### `REQ-001` [`NEW`]: <Concise Requirement Title>
-- **Source Intent**: <Verbatim user prompt or defect observation>
+- **Source Intent**: <Verbatim user prompt, defect observation, or "Derived from ADR-xxx (<reason>)">
 - **Statement**: WHEN <trigger condition>, THE <system/module> SHALL <observable behavior>.
 - **Acceptance Criteria**:
   - `AC-001-1` (Happy Path): <Deterministic, falsifiable condition that proves success>
@@ -85,7 +92,7 @@ Explicitly list what this specification will NOT do, change, or solve.
 # Architectural Decisions: <Feature Title>
 
 - **Feature ID**: `<YYYY-MM-DD-feature-slug>`
-- **Status**: `Accepted`
+- **Status**: `Planning` <!-- Matches spec.md package status or Accepted once approved -->
 
 ## `ADR-001`: <Decision Title>
 - **Status**: `Accepted` <!-- Accepted | Superseded by ADR-yyy -->
@@ -106,11 +113,11 @@ Explicitly list what this specification will NOT do, change, or solve.
 | Gate 1 Check | Status | Verification Evidence |
 | :--- | :--- | :--- |
 | **1. Codebase Grounding** | `PASS` | <Exact existing files/symbols inspected> |
-| **2. User Intent & Non-Goals** | `PASS` | <Verbatim user prompts cited; explicit Non-Goals listed> |
+| **2. User Intent & Non-Goals** | `PASS` | <Every REQ cites honest Source Intent (user quote or ADR derivation); explicit Non-Goals listed> |
 | **3. EARS & Falsifiable ACs** | `PASS` | <Every REQ uses EARS syntax with both Happy Path and Error/Boundary ACs> |
 | **4. Zero Deferral Placeholders** | `PASS` | <Zero unresolved deferral placeholders in spec.md and decisions.md> |
 | **5. Anti-Strawman ADR Debate** | `PASS` | <Every ADR compares >= 2 viable options with Trade-offs & Rejected Alternatives> |
-| **6. Cross-Spec Lineage & Cascade** | `PASS` | <Lineage declared and counterpart INDEX.md / spec.md / decisions.md files updated> |
+| **6. Cross-Spec Lineage & Cascade** | `PASS` | <Type, Version, and Lineage headers present; counterpart INDEX.md / spec.md / decisions.md files updated> |
 ```
 
 ---
@@ -120,19 +127,19 @@ Explicitly list what this specification will NOT do, change, or solve.
 **CRITICAL**: Before writing `design.md`, `tasks.md`, or `verification.md`, audit `spec.md` and `decisions.md` and record the completed **Gate 1 Self-Validation Table** at the bottom of `decisions.md`:
 
 - [ ] **1. Codebase Grounding**: Did I read the real codebase files and verify that `spec.md` and `decisions.md` reference real modules and symbols?
-- [ ] **2. User Intent & Non-Goals**: Does every `REQ-xxx` cite a concrete `Source Intent`, and does `spec.md` include a non-empty `## Non-Goals` section?
+- [ ] **2. User Intent & Non-Goals**: Does every `REQ-xxx` cite an honest `Source Intent` (verbatim user quote or explicit ADR/standard derivation, never a fabricated quote), and does `spec.md` include a non-empty `## Non-Goals` section?
 - [ ] **3. EARS & Falsifiable ACs**: Is every `REQ-xxx` written in EARS notation with at least one Happy-Path `AC-xxx` and one Error/Boundary `AC-xxx`?
 - [ ] **4. Zero Deferral Placeholders**: Are `spec.md` and `decisions.md` 100% free of unresolved deferral markers?
-- [ ] **5. Anti-Strawman ADRs**: Does every `ADR-xxx` evaluate at least 2 realistic options and state concrete `Trade-offs & Risks` and `Rejected Alternatives`?
-- [ ] **6. Cross-Spec Consistency & Counterpart Cascade**: If this spec supersedes or modifies a prior spec, are the lineage headers, delta tags, and counterpart files (`INDEX.md`, `<prior-spec>/spec.md`, `<prior-spec>/decisions.md`) updated consistently?
+- [ ] **5. Anti-Strawman ADRs**: Does every `ADR-xxx` evaluate at least 2 realistic options and state concrete `Trade-offs & Risks` and `Rejected Alternatives` (preserving old ADR bodies append-only)?
+- [ ] **6. Cross-Spec Consistency & Counterpart Cascade**: Does `spec.md` declare `Type`, `Version`, and `Lineage` (`Extends / Modifies` and `Supersedes`) in its header, and if it supersedes or modifies a prior spec, are the delta tags and counterpart files (`INDEX.md`, `<prior-spec>/spec.md` heading annotations with frozen requirement prose, `<prior-spec>/decisions.md`) updated consistently?
 
-*If any check fails, fix `spec.md` or `decisions.md` first. Do NOT proceed to `design.md` or `tasks.md` while `spec.md` is flawed.*
+*If any check fails, fix `spec.md` or `decisions.md` first. Do NOT proceed to `design.md` or `tasks.md` while Gate 1 has any failing row.*
 
 ---
 
 ## 5. Step 4: Author the Derived Blueprint (`design.md`, `tasks.md`, `verification.md`)
 
-Once Gate 1 passes:
+Once Gate 1 passes all 6 checks:
 
 ### 5.1 `design.md` Template
 ```markdown
@@ -201,7 +208,7 @@ Map each boundary/error `AC-xxx` from `spec.md` to concrete error handling and r
 Before presenting the specification package to the user for `"Proceed"` approval, complete the **Gate 2 Traceability Matrix** at the bottom of `tasks.md` and verify:
 - [ ] **1. 100% Per-AC Forward Traceability**: Every `REQ-xxx` and every `AC-xxx` in `spec.md` has its own row in the Gate 2 table mapped to `decisions.md`, `design.md`, `tasks.md`, and `verification.md`.
 - [ ] **2. 100% Backward Traceability (Zero Gold-Plating)**: Every component in `design.md` and every task in `tasks.md` maps back to an explicit `REQ-xxx` in `spec.md`. Remove any unmapped scope creep.
-- [ ] **3. Registry Sync**: `docs/specs/INDEX.md` has an up-to-date row for `<feature-id>` with status `Planning`.
+- [ ] **3. Registry Sync**: `docs/specs/INDEX.md` has an up-to-date 6-column row (`Feature ID | Title | Status | REQ Range | Key Decisions | Spec Path`) for `<feature-id>` with status `Planning`.
 
 Then present the summary to the user and wait for explicit **"Proceed"** approval before transitioning `Status` to `In-Progress` (and recording the `"Proceed"` sign-off in `spec.md` and `verification.md`).
 
@@ -234,17 +241,17 @@ Planning ──(Gate 1+2 PASS + Human "Proceed")──► In-Progress ──(All
 
 When a bug, test failure, or real-world edge case is discovered during `In-Progress`, `In-Testing`, or after `Verified`, **stop and classify the root cause into exactly one of three cases**:
 
-### Case 1: Implementation Bug *(Spec & Design are right; Code/Test is wrong)*
+### Case 1: Implementation Bug *(Spec & Design are right; Code/Test is wrong — Mints 0 New REQ IDs)*
 - **Symptom**: `spec.md`, `decisions.md`, and `design.md` accurately describe the desired behavior, but the code has a logic bug, typo, or missing test assertion.
 - **Action**:
-  1. **Do NOT edit `spec.md` or `decisions.md`.**
-  2. Set `Status` to `In-Progress` (if currently `In-Testing` or `Verified`) and add a reproducer task `- [ ] Fix <bug symptom> (REQ-xxx, AC-xxx)` in `tasks.md`.
+  1. **Do NOT edit `spec.md` or `decisions.md` (mint 0 new `REQ` IDs).**
+  2. Set `Status` to `In-Progress` (if currently `In-Testing` or `Verified`) and add a reproducer task `- [ ] Fix <bug symptom> (REQ-xxx, AC-xxx)` in `tasks.md` (or in a dedicated `Type: fix` child package citing the parent `REQ-xxx` IDs if isolating a standalone fix workstream).
   3. Reproduce with a failing test (TDD Red), fix the code (Green), check off `- [x]` in `tasks.md`, append the new test run to `verification.md`, and set `Status` to `In-Testing`.
 
-### Case 2: Design / Architecture Flaw *(Spec is right; `design.md` or `ADR-xxx` failed in practice)*
+### Case 2: Design / Architecture Flaw *(Spec is right; `design.md` or `ADR-xxx` failed in practice — Mints 0 New REQ IDs)*
 - **Symptom**: The requirement in `spec.md` is valid, but the chosen technical approach in `decisions.md` / `design.md` hits an unforeseen constraint, performance bottleneck, or integration failure.
 - **Action**:
-  1. **Stop coding. Do NOT weaken `spec.md` to match a broken design.**
+  1. **Stop coding. Do NOT weaken `spec.md` to match a broken design (mint 0 new `REQ` IDs).**
   2. Set `Status` to `Planning`. In `decisions.md`, mark the broken `ADR-xxx` as `Status: Superseded by ADR-yyy` and append the new `ADR-yyy` explaining why `ADR-xxx` failed in practice.
   3. Re-run **Gate 1** (`decisions.md`), update `design.md` and `tasks.md` to reflect `ADR-yyy`, re-run **Gate 2** (`tasks.md`), and ask the human user to **"Proceed"** before resuming implementation (`In-Progress`).
 
@@ -252,5 +259,5 @@ When a bug, test failure, or real-world edge case is discovered during `In-Progr
 - **Symptom**: Real-world usage reveals a missing requirement, a contradictory edge case, or a requirement in `spec.md` that produces undesirable behavior.
 - **Action**:
   1. **Stop coding. Never silently diverge from `spec.md` in code.**
-  2. Set `Status` to `Planning`. Either amend `spec.md` directly (if modifying the current feature) or create a new delta specification (`Extends / Modifies: <prior-spec-id>`) with `[MODIFIES REQ-xxx]` / `[NEW]` requirements and counterpart annotations.
+  2. Set `Status` to `Planning`. Either amend `spec.md` directly (if modifying the current feature) or create a new delta specification (`Extends / Modifies: <prior-spec-id>`) with `[MODIFIES REQ-xxx]` / `[NEW]` requirements and counterpart heading annotations (keeping the parent requirement prose frozen).
   3. Update `decisions.md` if architectural choices change, re-run **Gate 1** (`decisions.md`), cascade updates into `design.md` and `tasks.md`, re-run **Gate 2** (`tasks.md`), and obtain human **"Proceed"** approval before coding (`In-Progress`).
