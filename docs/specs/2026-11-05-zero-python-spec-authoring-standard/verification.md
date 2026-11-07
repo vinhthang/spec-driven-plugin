@@ -6,7 +6,7 @@
   - **Transition `In-Progress` $\to$ `In-Testing`**: All tasks in `tasks.md` completed (`- [x]`) and `In-Testing` dogfooding initiated by User on `2026-11-06` (*"I restarted, can you test this spec one time / or at least review it"*).
   - **`v2.1` Dogfooding Refinements & Cleanup (`2026-11-06`)**: Approved by User (*"yes apply these clears, and also rename to spec driven skill, you need to review all the documents in this project, remove the no need ones"*).
   - **`v2.2` SDD Benchmark Upgrades (`2026-11-06`)**: Approved by User (*"Keep it simple without a 4th ID prefix: use plain [PROVISIONAL] (stating the open question in one sentence on the requirement, no OQ-xxx numbering) + the 1-hop cascade rule, and proceed to execute the plan"*).
-  - **Transition `In-Testing` $\to$ `Verified`**: Pending final human sign-off after `In-Testing` review.
+  - **Transition `In-Testing` $\to$ `Verified` (`v2.3.0`, `2026-11-07`)**: Explicit human sign-off granted by User after remote-agent dogfooding (*"Yes — apply all fixes, transition 2026-11-05-zero-python-spec-authoring-standard from In-Testing to Verified, sync plugin.json to 2.3.0, and push"*).
 
 ---
 
@@ -24,44 +24,43 @@
 
 ---
 
-## Run 3 — `2026-11-06` (Complete Per-AC Verification of `AC-034-1` through `AC-037-2`)
+## Run 3 — `2026-11-07` (Complete Per-AC Verification & `Verified` Sign-Off, `v2.3.0`)
 
 ### 1. Verification of `REQ-034` (`AC-034-1` & `AC-034-2`)
-- **Command Executed (Full-Depth Repository File Tree Excluding `.git`)**:
-  `rtk proxy find /Users/thanghoang/github/spec-driven-plugin -not -path '*/.git*' | sort`
+- **Command Executed (Full-Depth Repository-Relative File Tree Excluding `.git`)**:
+  `find . -not -path '*/.git*' | sort`
 - **Verbatim Output**:
   ```text
-  /Users/thanghoang/github/spec-driven-plugin
-  /Users/thanghoang/github/spec-driven-plugin/docs
-  /Users/thanghoang/github/spec-driven-plugin/docs/specs
-  /Users/thanghoang/github/spec-driven-plugin/docs/specs/2026-11-05-zero-python-spec-authoring-standard
-  /Users/thanghoang/github/spec-driven-plugin/docs/specs/2026-11-05-zero-python-spec-authoring-standard/decisions.md
-  /Users/thanghoang/github/spec-driven-plugin/docs/specs/2026-11-05-zero-python-spec-authoring-standard/design.md
-  /Users/thanghoang/github/spec-driven-plugin/docs/specs/2026-11-05-zero-python-spec-authoring-standard/spec.md
-  /Users/thanghoang/github/spec-driven-plugin/docs/specs/2026-11-05-zero-python-spec-authoring-standard/tasks.md
-  /Users/thanghoang/github/spec-driven-plugin/docs/specs/2026-11-05-zero-python-spec-authoring-standard/verification.md
-  /Users/thanghoang/github/spec-driven-plugin/docs/specs/INDEX.md
-  /Users/thanghoang/github/spec-driven-plugin/plugin.json
-  /Users/thanghoang/github/spec-driven-plugin/README.md
-  /Users/thanghoang/github/spec-driven-plugin/rules
-  /Users/thanghoang/github/spec-driven-plugin/rules/AGENTS.md
-  /Users/thanghoang/github/spec-driven-plugin/skills
-  /Users/thanghoang/github/spec-driven-plugin/skills/spec-driven
-  /Users/thanghoang/github/spec-driven-plugin/skills/spec-driven/SKILL.md
+  .
+  ./README.md
+  ./docs
+  ./docs/specs
+  ./docs/specs/2026-11-05-zero-python-spec-authoring-standard
+  ./docs/specs/2026-11-05-zero-python-spec-authoring-standard/decisions.md
+  ./docs/specs/2026-11-05-zero-python-spec-authoring-standard/design.md
+  ./docs/specs/2026-11-05-zero-python-spec-authoring-standard/spec.md
+  ./docs/specs/2026-11-05-zero-python-spec-authoring-standard/tasks.md
+  ./docs/specs/2026-11-05-zero-python-spec-authoring-standard/verification.md
+  ./docs/specs/INDEX.md
+  ./plugin.json
+  ./rules
+  ./rules/AGENTS.md
+  ./skills
+  ./skills/spec-driven
+  ./skills/spec-driven/SKILL.md
   ```
-- **Command Executed (Plugin Manifest & Surface Validation)**:
-  `rtk agy plugin validate /Users/thanghoang/github/spec-driven-plugin && rtk python3 /Users/thanghoang/github/antigravity-attention-guard-plugin/scripts/surface_validator.py --plugin-dir /Users/thanghoang/github/spec-driven-plugin`
+- **Command Executed (Plugin Manifest Validation)**:
+  `agy plugin validate .`
 - **Verbatim Output**:
   ```text
-    [ok]    /Users/thanghoang/github/spec-driven-plugin
+    [ok]    .
             ✔ skills      : 1 processed
             - agents      : skipped (not found)
             - commands    : skipped (not found)
             - mcpServers  : skipped (not found)
             - hooks       : skipped (not found)
-  Plugin surface valid (1 skills, 7232/8000 always-on chars)
   ```
-- **Result (`AC-034-1`, `AC-034-2`)**: `PASS` — Zero `*.py`, `*.pyc`, `__pycache__/`, `hooks.json`, `agents/*.md`, `traceability_audit.json`, `SELF_REVIEW.md`, or `2026-10-*` files exist anywhere in the repository; only the 10 clean v2.2 files remain.
+- **Result (`AC-034-1`, `AC-034-2`)**: `PASS` — Zero `*.py`, `*.pyc`, `__pycache__/`, `hooks.json`, `agents/*.md`, `traceability_audit.json`, `SELF_REVIEW.md`, or `2026-10-*` files exist anywhere in the repository; `plugin.json`, `README.md`, and `spec.md` are synchronized at `2.3.0`.
 
 ### 2. Verification of `REQ-035` (`AC-035-1` & `AC-035-2`)
 - **Gate 1 Table, Honest `Source Intent` & Plain `[PROVISIONAL]` Rule (`AC-035-1`)**: Verified 6-row `## Gate 1: Normative Source Self-Validation` table in `decisions.md` with `PASS` across all 6 checks, and verified explicit non-fabricated `Source Intent` and plain `[PROVISIONAL]` (1-sentence open question, no 4th ID prefix) rules in `rules/AGENTS.md` and `skills/spec-driven/SKILL.md`.
@@ -69,8 +68,8 @@
 
 ### 3. Verification of `REQ-036` (`AC-036-1` & `AC-036-2`)
 - **Lineage, Header Metadata, Frozen Parent Prose & 1-Hop Cascade Pointer (`AC-036-1`, `AC-036-2`)**:
-  - `spec.md` declares `Type: refactor`, `Version: 2.2.0`, and `Lineage` (`Extends / Modifies: None`, `Supersedes: 2026-10-18 through 2026-10-30`), and `docs/specs/INDEX.md` uses the clean 6-column catalog format.
+  - `spec.md` declares `Type: refactor`, `Version: 2.3.0`, and `Lineage` (`Extends / Modifies: None`, `Supersedes: 2026-10-18 through 2026-10-30`), and `docs/specs/INDEX.md` uses the clean 6-column catalog format (`Status: Verified`).
   - `rules/AGENTS.md` and `skills/spec-driven/SKILL.md` explicitly require that during Living-Spec Modification (`Extends / Modifies`), the parent spec's requirement prose and `AC-xxx` bodies remain 100% immutable while heading lineage tags (`Modified by <latest-spec-id>/REQ-yyy`) always point directly in 1 hop to the latest active requirement.
 
 ### 4. Verification of `REQ-037` (`AC-037-1` & `AC-037-2`)
-- **Lifecycle & Synchronized 3-Way Bug Decision Protocol (`AC-037-1`, `AC-037-2`)**: Verified that `spec.md`, `rules/AGENTS.md`, `skills/spec-driven/SKILL.md`, and `README.md` define identical 6-state lifecycle transitions and 3-Way Bug Decision Protocol branches (explicitly noting that Case 1 and Case 2 mint 0 new `REQ` IDs, while Case 3 updates/adds `REQ-xxx` IDs in-place or mints new delta `REQ-xxx` IDs in a `[MODIFIES]` delta spec).
+- **Lifecycle & Synchronized 3-Way Bug Decision Protocol (`AC-037-1`, `AC-037-2`)**: Verified that `spec.md`, `rules/AGENTS.md`, `skills/spec-driven/SKILL.md`, and `README.md` define identical 6-state lifecycle transitions, proportional Primary Agent execution boundary (allowing direct execution for trivial single-file Case 1 fixes or standalone single-agent environments), and 3-Way Bug Decision Protocol branches (Case 1 and Case 2 mint 0 new `REQ` IDs; Case 3 updates/adds `REQ-xxx` IDs in-place or mints new delta `REQ-xxx` IDs in a `[MODIFIES]` delta spec).

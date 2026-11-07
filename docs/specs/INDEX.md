@@ -6,4 +6,4 @@ Central registry of feature specifications governed by the 5-Document Architectu
 
 | Feature ID | Title | Status | REQ Range | Key Decisions | Spec Path |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| `2026-11-05-zero-python-spec-authoring-standard` | Zero-Python Spec Authoring Standard, Self-Validation & Bug Triage | In-Testing | `REQ-034` - `REQ-037` | `ADR-025` | [spec.md](./2026-11-05-zero-python-spec-authoring-standard/spec.md) |
+| `2026-11-05-zero-python-spec-authoring-standard` | Zero-Python Spec Authoring Standard, Self-Validation & Bug Triage | Verified | `REQ-034` - `REQ-037` | `ADR-025` | [spec.md](./2026-11-05-zero-python-spec-authoring-standard/spec.md) |

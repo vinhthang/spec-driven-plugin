@@ -30,10 +30,15 @@ $$\underbrace{\text{spec.md} > \text{decisions.md}}_{\text{Normative Source}} \x
 
 ---
 
-## Bundled Files
-- [`plugin.json`](plugin.json): Plugin manifest.
+## Bundled Files & Installation
+
+- [`plugin.json`](plugin.json): Plugin manifest (`v2.3.0`).
 - [`rules/AGENTS.md`](rules/AGENTS.md): Concise always-on governance rule (`spec-driven`) and skill trigger.
 - [`skills/spec-driven/SKILL.md`](skills/spec-driven/SKILL.md): Complete authoring playbook, EARS syntax guide, drop-in 5-Document templates, Gate 1 / Gate 2 self-validation checklists, and 3-way bug decision tree.
+
+### Full Plugin vs. Standalone Skill Installation
+- **Full Plugin (`~/.gemini/config/plugins/spec-driven-plugin/`)**: Automatically injects both `rules/AGENTS.md` (always-on `<rule name="spec-driven">`) and `skills/spec-driven/SKILL.md` (on-demand playbook).
+- **Standalone Skill (`~/.gemini/skills/spec-driven/SKILL.md`)**: Registers `spec-driven` in `<skills>` for on-demand lookup. If you also want the always-on `<rule name="spec-driven">` constraints active before skill lookup in remote/standalone workspaces, copy `rules/AGENTS.md` to `~/.gemini/config/rules/spec-driven.md` or the target repository's `AGENTS.md` (`.gemini/AGENTS.md`).
 
 ---
 

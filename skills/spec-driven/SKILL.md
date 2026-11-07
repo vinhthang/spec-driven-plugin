@@ -213,7 +213,7 @@ Before presenting the specification package to the user for `"Proceed"` approval
 
 Then present the summary to the user and wait for explicit **"Proceed"** approval before transitioning `Status` to `In-Progress` (and recording the `"Proceed"` sign-off in `spec.md` and `verification.md`).
 
-> **Primary Agent Execution Boundary**: Once `Status` transitions to `In-Progress`, the Primary Agent coordinates the workstream and updates Markdown specification artifacts (`tasks.md`, `verification.md`), but **never directly modifies non-Markdown source code or the runtime/package/cluster environment** (neither via file tools nor via shell commands in `run_command`). Delegate all code mutations, test suites, builds, and environment changes to execution subagents.
+> **Primary Agent Execution Boundary**: Once `Status` transitions to `In-Progress`, the Primary Agent coordinates the workstream, updates Markdown specification artifacts (`tasks.md`, `verification.md`), and delegates multi-step implementation, multi-file changes, and noisy test/build suites to execution subagents (mandatory whenever `attention-guard` thinking-model restrictions are active). Trivial single-file Case 1 fixes or standalone single-agent environments without subagent hooks may execute directly.
 
 ---
 

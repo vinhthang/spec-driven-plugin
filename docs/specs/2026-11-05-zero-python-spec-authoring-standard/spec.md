@@ -2,9 +2,9 @@
 
 - **Feature ID**: `2026-11-05-zero-python-spec-authoring-standard`
 - **Type**: `refactor`
-- **Status**: `In-Testing`
-- **Version**: `2.2.0`
-- **Sign-off**: `Human "Proceed" approval granted by User on 2026-11-05 ("The user has approved this document — Proceed"); In-Testing dogfooding initiated on 2026-11-06; v2.1 skill rename to spec-driven and cleanup approved on 2026-11-06; v2.2 [PROVISIONAL] and 1-hop cascade upgrades approved by User on 2026-11-06 ("Keep it simple without a 4th ID prefix: use plain [PROVISIONAL] ... + the 1-hop cascade rule, and proceed to execute the plan").`
+- **Status**: `Verified`
+- **Version**: `2.3.0`
+- **Sign-off**: `Human "Proceed" approval granted by User on 2026-11-05 ("The user has approved this document — Proceed"); In-Testing dogfooding initiated on 2026-11-06; v2.1 skill rename to spec-driven and cleanup approved on 2026-11-06; v2.2 [PROVISIONAL] and 1-hop cascade upgrades approved on 2026-11-06; v2.3 remote-agent feedback fixes and transition to Verified signed off by User on 2026-11-07 ("Yes — apply all fixes, transition 2026-11-05-zero-python-spec-authoring-standard from In-Testing to Verified, sync plugin.json to 2.3.0, and push").`
 - **Lineage**:
   - **Extends / Modifies**: `None`
   - **Supersedes**: `2026-10-18-true-spec-driven-enforcement` (`REQ-001` – `REQ-008`, `ADR-001` – `ADR-006`), `2026-10-19-simplification-and-deduplication` (`REQ-009` – `REQ-017`, `ADR-007` – `ADR-012`), `2026-10-19-sdd-lifecycle-and-ears-evolution` (`REQ-018` – `REQ-022`, `ADR-012` – `ADR-014`), `2026-10-20-harness2-artifact-gate-and-auditor-tools` (`REQ-023` – `REQ-028`, `ADR-015` – `ADR-019`), and `2026-10-30-adversarial-adr-debate-and-spec-gate-hardening` (`REQ-029` – `REQ-033`, `ADR-020` – `ADR-024`) — all retired and removed from the working tree.

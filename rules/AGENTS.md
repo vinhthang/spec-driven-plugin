@@ -9,7 +9,7 @@ Governs how to write, self-validate, evolve, and test feature specifications usi
 - **1. Normative Authority & Primary Agent Boundary**:
   - **Normative Source (`spec.md` > `decisions.md`)**: Defines *what* (`REQ-xxx`, `AC-xxx`, `Non-Goals`) and *why* (`ADR-xxx`).
   - **Derived Blueprint (`design.md` > `tasks.md` > `verification.md`)**: Never write or update `design.md`, `tasks.md`, or `verification.md` before `spec.md` and `decisions.md` pass **Gate 1**.
-  - **Primary Agent Boundary**: The Primary Agent authors `.md` specification files and never modifies source code or the runtime environment directly; delegate all code, test, build, and runtime changes to subagents after human `"Proceed"`.
+  - **Primary Agent Boundary**: The Primary Agent authors `.md` specification files and delegates multi-step `tasks.md` implementation, multi-file changes, and noisy test/build suites to subagents after human `"Proceed"` (mandatory whenever `attention-guard` thinking-model restrictions are active); trivial single-file Case 1 fixes or standalone single-agent environments may execute directly.
 - **2. Five Spec-Writing Quality Invariants**:
   - **Codebase Grounding**: Read existing files/symbols before writing `spec.md`. Never invent phantom APIs or duplicate existing abstractions.
   - **Intent Attribution & Non-Goals**: Every `REQ-xxx` must cite its `Source Intent` — either a verbatim user prompt, an observed defect, or an explicit derivation from a governing standard/ADR (`Derived from ADR-xxx / <standard>`). Never fabricate a user quote; if a requirement has no attributable intent, flag it as an open question to the user instead of guessing. Every `spec.md` must declare explicit `## Non-Goals`.
