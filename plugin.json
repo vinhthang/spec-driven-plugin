@@ -1,5 +1,5 @@
 {
   "name": "spec-driven-plugin",
-  "version": "2.3.0",
-  "description": "Spec-Driven Development governance for Google Antigravity"
+  "version": "3.0.0",
+  "description": "Spec-driven development skill and governance plugin for Google Antigravity and Codex"
 }
