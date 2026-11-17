@@ -1,6 +1,6 @@
 {
   "name": "spec-driven-plugin",
-  "version": "3.1.0",
+  "version": "3.2.0",
   "description": "Code-grounded five-document specification skill and governance plugin for Google Antigravity and Codex",
   "author": {
     "name": "Sam Hoang",

@@ -116,6 +116,7 @@ Sources: [spec.md](./spec.md), [design.md](./design.md)
 
 - [x] Complete the work and its applicable checks.
 - Covers: REQ-001 / AC-001-1, AC-001-2
+- Files: `src/worker/retry.py`, `tests/test_retry.py`
 - Dependencies: None
 - Blocked by: None
 - Work: Write failing unit tests in `tests/test_retry.py` for seeded jitter bounds and `ValueError` boundaries, then implement `rng` sampling and guards in `src/worker/retry.py`.

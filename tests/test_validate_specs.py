@@ -29,9 +29,18 @@ if _AI_REVIEW_SCRIPTS.is_dir() and str(_AI_REVIEW_SCRIPTS) not in sys.path:
     sys.path.append(str(_AI_REVIEW_SCRIPTS))
 
 from validate_specs import (  # noqa: E402
+    AC_DECL_RE,
+    DECLARED_ADR_RE,
+    DECLARED_REQ_RE,
+    LINK_RE,
+    PROVISIONAL_AC_RE,
+    PROVISIONAL_REQ_RE,
+    VERIF_AC_HEADING_RE,
+    _expand_id_cell,
     heading_slug,
     main,
     strip_fenced_code_blocks,
+    strip_inline_code,
     validate_workspace,
 )
 
@@ -1566,6 +1575,835 @@ def test_round5_fallback_order_qualified_run_links_dup_runs_and_paren_links(tmp_
     res_pb = validate_workspace(ws_paren_bad)
     assert res_pb["valid"] is False
     assert any("missing(1).md" in e for e in res_pb["errors"]), res_pb["errors"]
+
+
+def test_brownfield_index_spaced_hyphen_and_emdash_ranges(tmp_path: Path) -> None:
+    assert _expand_id_cell("`REQ-033`..`REQ-037`", "REQ") == {
+        "REQ-033", "REQ-034", "REQ-035", "REQ-036", "REQ-037",
+    }
+    assert _expand_id_cell("REQ-033–REQ-037", "REQ") == {
+        "REQ-033", "REQ-034", "REQ-035", "REQ-036", "REQ-037",
+    }
+    assert _expand_id_cell("REQ-033—REQ-035", "REQ") == {
+        "REQ-033", "REQ-034", "REQ-035",
+    }
+    assert _expand_id_cell("`REQ-033` - `REQ-037`", "REQ") == {"REQ-033", "REQ-037"}
+    assert _expand_id_cell("`ADR-001`..`ADR-003`", "ADR") == {
+        "ADR-001", "ADR-002", "ADR-003",
+    }
+    assert _expand_id_cell("`ADR-001` - `ADR-003`", "ADR") == {"ADR-001", "ADR-003"}
+    assert _expand_id_cell("REQ-037..REQ-033", "REQ") == {"REQ-037", "REQ-033"}
+
+    # End-to-end validate_workspace with `..` range and em-dash range in INDEX.md
+    ws_dotdot = tmp_path / "ws_dotdot"
+    files_h = _make_package_files(
+        feature_id="2026-11-18-range-dotdot",
+        req_id="REQ-033",
+        ac_num="033",
+    )
+    pkg_h = "docs/specs/2026-11-18-range-dotdot"
+    extra_reqs_h = "".join(
+        f"### REQ-{n:03d}: Extra requirement {n}\n\n"
+        f"- Source intent: User request.\n"
+        f"- Statement: WHEN called, THE system SHALL handle {n}.\n"
+        f"- AC-{n:03d}-1 — Success: Ok.\n\n"
+        for n in range(34, 38)
+    )
+    files_h[f"{pkg_h}/spec.md"] = files_h[f"{pkg_h}/spec.md"].replace(
+        "## Assumptions and owner-deferred questions",
+        f"{extra_reqs_h}## Assumptions and owner-deferred questions",
+    )
+    for doc_name in ("decisions.md", "design.md", "tasks.md", "verification.md"):
+        files_h[f"{pkg_h}/{doc_name}"] += "\nCovers: REQ-034, REQ-035, REQ-036, REQ-037.\n"
+    for n in range(34, 38):
+        files_h[f"{pkg_h}/tasks.md"] = files_h[f"{pkg_h}/tasks.md"].replace(
+            "\n\n- Backward scope check:",
+            f"\n| REQ-{n:03d} | AC-{n:03d}-1 | [Rationale](./decisions.md#architectural-rationale) | [Interfaces](./design.md#interfaces-and-flow) | [Task 1](#task-1-implement-validation) | [AC-{n:03d}-1](./verification.md#ac-{n:03d}-1-req-{n:03d}) | PASS — verified mapping |\n\n- Backward scope check:",
+        )
+        files_h[f"{pkg_h}/verification.md"] = files_h[f"{pkg_h}/verification.md"].replace(
+            "## Execution evidence",
+            f"### AC-{n:03d}-1 (REQ-{n:03d})\n\n- Method: Unit test.\n- Expected outcome: Ok.\n- Execution: [Run 1](#run-1--2026-11-18)\n\n## Execution evidence",
+        )
+        files_h[f"{pkg_h}/verification.md"] = files_h[f"{pkg_h}/verification.md"].replace(
+            "AC-033-2 `PASS`",
+            f"AC-033-2 `PASS`, AC-{n:03d}-1 `PASS`",
+        )
+    files_h["docs/specs/INDEX.md"] = files_h["docs/specs/INDEX.md"].replace(
+        "| REQ-033 |", "| `REQ-033`..`REQ-037` |"
+    )
+    _write_tree(ws_dotdot, files_h)
+    res_h = validate_workspace(ws_dotdot)
+    assert res_h["valid"] is True, res_h["errors"]
+
+    # Ambiguous spaced hyphen in validated row triggers clear error; untouched brownfield row does not break new package
+    ws_brownfield = tmp_path / "ws_brownfield_hyphen"
+    legacy_files = _make_package_files(
+        feature_id="2026-10-01-legacy-range",
+        req_id="REQ-033",
+        ac_num="033",
+    )
+    pkg_l = "docs/specs/2026-10-01-legacy-range"
+    legacy_files[f"{pkg_l}/spec.md"] = legacy_files[f"{pkg_l}/spec.md"].replace(
+        "## Assumptions and owner-deferred questions",
+        extra_reqs_h + "## Assumptions and owner-deferred questions",
+    )
+    new_clean = _make_package_files(
+        feature_id="2026-11-18-new-clean",
+        req_id="REQ-038",
+        ac_num="038",
+    )
+    brownfield_index = (
+        "# Feature specifications\n\n"
+        "| Feature ID | Title | Status | REQ IDs | ADR IDs | Specification |\n"
+        "| --- | --- | --- | --- | --- | --- |\n"
+        "| 2026-10-01-legacy-range | Legacy | In-Testing | `REQ-033` - `REQ-037` | None | [spec](./2026-10-01-legacy-range/spec.md) |\n"
+        "| 2026-11-18-new-clean | Clean | In-Testing | REQ-038 | None | [spec](./2026-11-18-new-clean/spec.md) |\n"
+    )
+    _write_tree(ws_brownfield, {**legacy_files, **new_clean, "docs/specs/INDEX.md": brownfield_index})
+
+    res_new_only = validate_workspace(ws_brownfield / "docs/specs/2026-11-18-new-clean")
+    assert res_new_only["valid"] is True, res_new_only["errors"]
+    assert res_new_only["errors"] == []
+
+    res_all_ambig = validate_workspace(ws_brownfield, force_all=True)
+    assert res_all_ambig["valid"] is False
+    expected_msg = (
+        "INDEX.md: ambiguous ' - ' separator in catalog row for '2026-10-01-legacy-range'; "
+        "use '..' or '–' for inclusive ranges, or ',' for non-contiguous IDs"
+    )
+    assert expected_msg in res_all_ambig["errors"], res_all_ambig["errors"]
+
+    # Ambiguous spaced hyphen in ADR column also flagged
+    ws_adr_ambig = tmp_path / "ws_adr_ambig"
+    adr_files = _make_package_files(
+        feature_id="2026-11-18-adr-ambig",
+        req_id="REQ-001",
+        ac_num="001",
+        adr_block=(
+            "## ADR-001: First\n\n- Governs: REQ-001\n- State: Accepted\n\n"
+            "## ADR-002: Second\n\n- Governs: REQ-001\n- State: Accepted\n\n"
+        ),
+        adr_index="`ADR-001` - `ADR-002`",
+    )
+    _write_tree(ws_adr_ambig, adr_files)
+    res_adr_ambig = validate_workspace(ws_adr_ambig)
+    assert res_adr_ambig["valid"] is False
+    assert any("ambiguous ' - ' separator in catalog row for '2026-11-18-adr-ambig'" in e for e in res_adr_ambig["errors"])
+
+    ws_em = tmp_path / "ws_emdash"
+    files_e = _make_package_files(
+        feature_id="2026-11-18-range-emdash",
+        req_id="REQ-033",
+        ac_num="033",
+    )
+    pkg_e = "docs/specs/2026-11-18-range-emdash"
+    extra_reqs_e = "".join(
+        f"### REQ-{n:03d}: Extra requirement {n}\n\n"
+        f"- Source intent: User request.\n"
+        f"- Statement: WHEN called, THE system SHALL handle {n}.\n"
+        f"- AC-{n:03d}-1 — Success: Ok.\n\n"
+        for n in range(34, 36)
+    )
+    files_e[f"{pkg_e}/spec.md"] = files_e[f"{pkg_e}/spec.md"].replace(
+        "## Assumptions and owner-deferred questions",
+        f"{extra_reqs_e}## Assumptions and owner-deferred questions",
+    )
+    for doc_name in ("decisions.md", "design.md", "tasks.md", "verification.md"):
+        files_e[f"{pkg_e}/{doc_name}"] += "\nCovers: REQ-034, REQ-035.\n"
+    for n in range(34, 36):
+        files_e[f"{pkg_e}/tasks.md"] = files_e[f"{pkg_e}/tasks.md"].replace(
+            "\n\n- Backward scope check:",
+            f"\n| REQ-{n:03d} | AC-{n:03d}-1 | [Rationale](./decisions.md#architectural-rationale) | [Interfaces](./design.md#interfaces-and-flow) | [Task 1](#task-1-implement-validation) | [AC-{n:03d}-1](./verification.md#ac-{n:03d}-1-req-{n:03d}) | PASS — verified mapping |\n\n- Backward scope check:",
+        )
+        files_e[f"{pkg_e}/verification.md"] = files_e[f"{pkg_e}/verification.md"].replace(
+            "## Execution evidence",
+            f"### AC-{n:03d}-1 (REQ-{n:03d})\n\n- Method: Unit test.\n- Expected outcome: Ok.\n- Execution: [Run 1](#run-1--2026-11-18)\n\n## Execution evidence",
+        )
+        files_e[f"{pkg_e}/verification.md"] = files_e[f"{pkg_e}/verification.md"].replace(
+            "AC-033-2 `PASS`",
+            f"AC-033-2 `PASS`, AC-{n:03d}-1 `PASS`",
+        )
+    files_e["docs/specs/INDEX.md"] = files_e["docs/specs/INDEX.md"].replace(
+        "| REQ-033 |", "| REQ-033—REQ-035 |"
+    )
+    _write_tree(ws_em, files_e)
+    res_e = validate_workspace(ws_em)
+    assert res_e["valid"] is True, res_e["errors"]
+
+
+def test_backticked_legacy_req_and_adr_headings_detected(tmp_path: Path) -> None:
+    assert DECLARED_REQ_RE.findall("### `REQ-033` — Legacy Title\n") == ["REQ-033"]
+    assert DECLARED_ADR_RE.findall("## `ADR-001` — Legacy Decision\n") == ["ADR-001"]
+
+    legacy_pkg = _make_package_files(
+        feature_id="2026-10-01-legacy",
+        req_id="REQ-033",
+        ac_num="033",
+        adr_block=(
+            "## `ADR-001` — Legacy Decision\n\n"
+            "- Governs: REQ-033\n"
+            "- State: Accepted\n"
+            "- Decision: Legacy choice.\n\n"
+        ),
+        adr_index="ADR-001",
+    )
+    legacy_pkg["docs/specs/2026-10-01-legacy/spec.md"] = legacy_pkg[
+        "docs/specs/2026-10-01-legacy/spec.md"
+    ].replace("### REQ-033: Validate sample input", "### `REQ-033` — Legacy Title")
+
+    # New package reusing REQ-033 must fail single-package validation
+    new_req_dup = _make_package_files(
+        feature_id="2026-11-18-new-req-dup",
+        req_id="REQ-033",
+        ac_num="033",
+    )
+    idx_req = (
+        "# Feature specifications\n\n"
+        "| Feature ID | Title | Status | REQ IDs | ADR IDs | Specification |\n"
+        "| --- | --- | --- | --- | --- | --- |\n"
+        "| 2026-10-01-legacy | Legacy | In-Testing | REQ-033 | ADR-001 | [spec](./2026-10-01-legacy/spec.md) |\n"
+        "| 2026-11-18-new-req-dup | New | In-Testing | REQ-033 | None | [spec](./2026-11-18-new-req-dup/spec.md) |\n"
+    )
+    ws1 = tmp_path / "legacy_req_dup"
+    _write_tree(ws1, {**legacy_pkg, **new_req_dup, "docs/specs/INDEX.md": idx_req})
+    res_req = validate_workspace(ws1 / "docs/specs/2026-11-18-new-req-dup")
+    assert res_req["valid"] is False
+    assert any("Duplicate declared REQ REQ-033" in e for e in res_req["errors"]), res_req["errors"]
+
+    # New package reusing ADR-001 must fail single-package validation
+    new_adr_dup = _make_package_files(
+        feature_id="2026-11-18-new-adr-dup",
+        req_id="REQ-034",
+        ac_num="034",
+        adr_block=(
+            "## ADR-001: Choice\n\n"
+            "- Governs: REQ-034\n"
+            "- State: Accepted\n"
+            "- Decision: Reused.\n\n"
+        ),
+        adr_index="ADR-001",
+    )
+    idx_adr = (
+        "# Feature specifications\n\n"
+        "| Feature ID | Title | Status | REQ IDs | ADR IDs | Specification |\n"
+        "| --- | --- | --- | --- | --- | --- |\n"
+        "| 2026-10-01-legacy | Legacy | In-Testing | REQ-033 | ADR-001 | [spec](./2026-10-01-legacy/spec.md) |\n"
+        "| 2026-11-18-new-adr-dup | New | In-Testing | REQ-034 | ADR-001 | [spec](./2026-11-18-new-adr-dup/spec.md) |\n"
+    )
+    ws2 = tmp_path / "legacy_adr_dup"
+    _write_tree(ws2, {**legacy_pkg, **new_adr_dup, "docs/specs/INDEX.md": idx_adr})
+    res_adr = validate_workspace(ws2 / "docs/specs/2026-11-18-new-adr-dup")
+    assert res_adr["valid"] is False
+    assert any("Duplicate declared ADR ADR-001" in e for e in res_adr["errors"]), res_adr["errors"]
+
+
+def test_single_package_ignores_unrelated_legacy_adr_collisions(tmp_path: Path) -> None:
+    adr_legacy_a = (
+        "## ADR-001: Choice\n\n"
+        "- Governs: REQ-001\n"
+        "- State: Accepted\n"
+        "- Decision: Legacy A.\n\n"
+    )
+    adr_legacy_b = (
+        "## ADR-001: Choice\n\n"
+        "- Governs: REQ-002\n"
+        "- State: Accepted\n"
+        "- Decision: Legacy B.\n\n"
+    )
+    legacy_a = _make_package_files(
+        feature_id="2026-10-01-legacy-a",
+        req_id="REQ-001",
+        ac_num="001",
+        adr_block=adr_legacy_a,
+        adr_index="ADR-001",
+    )
+    legacy_b = _make_package_files(
+        feature_id="2026-10-02-legacy-b",
+        req_id="REQ-002",
+        ac_num="002",
+        adr_block=adr_legacy_b,
+        adr_index="ADR-001",
+    )
+    new_ok = _make_package_files(
+        feature_id="2026-11-18-new-feat",
+        req_id="REQ-038",
+        ac_num="038",
+        adr_block=(
+            "## ADR-006: Choice\n\n"
+            "- Governs: REQ-038\n"
+            "- State: Accepted\n"
+            "- Decision: Fresh ADR.\n\n"
+        ),
+        adr_index="ADR-006",
+    )
+    new_ok["docs/specs/2026-11-18-new-feat/tasks.md"] = new_ok[
+        "docs/specs/2026-11-18-new-feat/tasks.md"
+    ].replace("[ADR-001](./decisions.md#adr-001-choice)", "[ADR-006](./decisions.md#adr-006-choice)")
+
+    index_ok = (
+        "# Feature specifications\n\n"
+        "| Feature ID | Title | Status | REQ IDs | ADR IDs | Specification |\n"
+        "| --- | --- | --- | --- | --- | --- |\n"
+        "| 2026-10-01-legacy-a | Legacy A | In-Testing | REQ-001 | ADR-001 | [spec](./2026-10-01-legacy-a/spec.md) |\n"
+        "| 2026-10-02-legacy-b | Legacy B | In-Testing | REQ-002 | ADR-001 | [spec](./2026-10-02-legacy-b/spec.md) |\n"
+        "| 2026-11-18-new-feat | New Feat | In-Testing | REQ-038 | ADR-006 | [spec](./2026-11-18-new-feat/spec.md) |\n"
+    )
+    ws_ok = tmp_path / "brownfield_ok"
+    _write_tree(ws_ok, {**legacy_a, **legacy_b, **new_ok, "docs/specs/INDEX.md": index_ok})
+
+    pkg_dir_new = ws_ok / "docs/specs/2026-11-18-new-feat"
+    res_single_ok = validate_workspace(pkg_dir_new)
+    assert res_single_ok["valid"] is True, res_single_ok["errors"]
+    assert res_single_ok["errors"] == []
+
+    # --all (force_all=True) still reports the legacy ADR-001 collision
+    res_all = validate_workspace(ws_ok, force_all=True)
+    assert res_all["valid"] is False
+    assert any(
+        "Duplicate declared ADR ADR-001" in e
+        and "2026-10-01-legacy-a" in e
+        and "2026-10-02-legacy-b" in e
+        for e in res_all["errors"]
+    ), res_all["errors"]
+
+    # If new_feat reuses ADR-001, single-package validation fails
+    new_bad = _make_package_files(
+        feature_id="2026-11-18-new-feat",
+        req_id="REQ-038",
+        ac_num="038",
+        adr_block=(
+            "## ADR-001: Choice\n\n"
+            "- Governs: REQ-038\n"
+            "- State: Accepted\n"
+            "- Decision: Reused ADR-001.\n\n"
+        ),
+        adr_index="ADR-001",
+    )
+    index_bad = index_ok.replace("| ADR-006 |", "| ADR-001 |")
+    ws_bad = tmp_path / "brownfield_bad"
+    _write_tree(ws_bad, {**legacy_a, **legacy_b, **new_bad, "docs/specs/INDEX.md": index_bad})
+    res_single_bad = validate_workspace(ws_bad / "docs/specs/2026-11-18-new-feat")
+    assert res_single_bad["valid"] is False
+    assert any("Duplicate declared ADR ADR-001" in e for e in res_single_bad["errors"]), res_single_bad["errors"]
+
+
+def test_skill_md_and_antigravity_reference_links_resolve() -> None:
+    skill_md = PLUGIN_ROOT / "skills" / "spec-driven" / "SKILL.md"
+    antigravity_md = PLUGIN_ROOT / "skills" / "spec-driven" / "references" / "antigravity.md"
+    assert skill_md.is_file()
+    assert antigravity_md.is_file()
+
+    skill_text = strip_inline_code(strip_fenced_code_blocks(skill_md.read_text(encoding="utf-8")), "code")
+    targets = [m.group(2).strip("<>") for m in LINK_RE.finditer(skill_text)]
+    assert "references/antigravity.md" in targets
+    for target in targets:
+        if re.match(r"^[a-zA-Z][a-zA-Z0-9+.-]*:", target):
+            continue
+        rel_part = target.partition("#")[0]
+        dest = (skill_md.parent / rel_part).resolve()
+        assert dest.exists(), f"Broken SKILL.md link target: {target}"
+
+
+def test_provisional_req_backtick_parity() -> None:
+    assert PROVISIONAL_REQ_RE.findall("### `REQ-033`: Legacy [PROVISIONAL]\n") == ["REQ-033"]
+    assert PROVISIONAL_REQ_RE.findall("### REQ-033: Normal [PROVISIONAL]\n") == ["REQ-033"]
+    assert PROVISIONAL_REQ_RE.findall("### `REQ-033`: Settled\n") == []
+
+
+def test_parallel_tasks_files_write_set_validation(tmp_path: Path) -> None:
+    pkg = "docs/specs/2026-11-18-sample-feature"
+
+    def _two_task_ws(
+        name: str,
+        task1_block: str,
+        task2_block: str,
+    ) -> dict[str, Any]:
+        ws = tmp_path / name
+        files = _make_package_files()
+        files[f"{pkg}/tasks.md"] = (
+            "# Tasks: Sample feature\n\n"
+            "Sources: [spec.md](./spec.md), [design.md](./design.md)\n\n"
+            f"{task1_block}\n\n"
+            f"{task2_block}\n\n"
+            "## Gate 2: traceability and readiness\n\n"
+            "| Requirement | AC | ADR or rationale | Design | Task | Planned verification | Status / reason |\n"
+            "| --- | --- | --- | --- | --- | --- | --- |\n"
+            "| REQ-001 | AC-001-1 | [Rationale](./decisions.md#architectural-rationale) | [Interfaces](./design.md#interfaces-and-flow) | [Task 1](#task-1-auth) | [AC-001-1](./verification.md#ac-001-1-req-001) | PASS — verified mapping |\n"
+            "| REQ-001 | AC-001-2 | [Rationale](./decisions.md#architectural-rationale) | [Boundaries](./design.md#boundaries-and-recovery) | [Task 2](#task-2-billing) | [AC-001-2](./verification.md#ac-001-2-req-001) | PASS — verified mapping |\n\n"
+            "- Backward scope check: PASS\n"
+            "- Reference and catalog consistency: PASS\n"
+        )
+        _write_tree(ws, files)
+        return validate_workspace(ws)
+
+    # Disjoint parallel tasks pass
+    res_disjoint = _two_task_ws(
+        "disjoint",
+        (
+            "## Task 1: Auth\n\n"
+            "- [x] Done.\n"
+            "- Covers: REQ-001 / AC-001-1\n"
+            "- Files: `src/auth.py`, `tests/test_auth.py`\n"
+            "- Dependencies: None\n"
+            "- Blocked by: None\n"
+        ),
+        (
+            "## Task 2: Billing\n\n"
+            "- [x] Done.\n"
+            "- Covers: REQ-001 / AC-001-2\n"
+            "- Files: src/billing.py, tests/test_billing.py\n"
+            "- Dependencies: none\n"
+            "- Blocked by: `None`\n"
+        ),
+    )
+    assert res_disjoint["valid"] is True, res_disjoint["errors"]
+
+    # Parallel-ready task missing - Files: (omitted or blank) fails
+    for missing_files_line in ("", "- Files: \n"):
+        res_missing = _two_task_ws(
+            f"missing_{'blank' if missing_files_line else 'omitted'}",
+            (
+                "## Task 1: Auth\n\n"
+                "- [x] Done.\n"
+                "- Covers: REQ-001 / AC-001-1\n"
+                "- Files: `src/auth.py`\n"
+                "- Dependencies: None\n"
+                "- Blocked by: None\n"
+            ),
+            (
+                "## Task 2: Billing\n\n"
+                "- [x] Done.\n"
+                "- Covers: REQ-001 / AC-001-2\n"
+                f"{missing_files_line}"
+                "- Dependencies: None\n"
+                "- Blocked by: None\n"
+            ),
+        )
+        assert res_missing["valid"] is False
+        assert (
+            "2026-11-18-sample-feature/tasks.md: parallel task 'Task 2: Billing' missing required '- Files:' write-set"
+            in res_missing["errors"]
+        ), res_missing["errors"]
+
+    # Parallel-ready tasks sharing an overlapping file fail
+    res_overlap = _two_task_ws(
+        "overlap",
+        (
+            "## Task 1: Auth\n\n"
+            "- [x] Done.\n"
+            "- Covers: REQ-001 / AC-001-1\n"
+            "- Files: `src/auth.py`, `tests/test_shared.py`\n"
+            "- Dependencies: None\n"
+            "- Blocked by: None\n"
+        ),
+        (
+            "## Task 2: Billing\n\n"
+            "- [x] Done.\n"
+            "- Covers: REQ-001 / AC-001-2\n"
+            "- Files: `src/billing.py`, tests/test_shared.py\n"
+            "- Dependencies: None\n"
+            "- Blocked by: None\n"
+        ),
+    )
+    assert res_overlap["valid"] is False
+    assert (
+        "2026-11-18-sample-feature/tasks.md: parallel tasks 'Task 1: Auth' and 'Task 2: Billing' "
+        "have overlapping '- Files:' write-set (tests/test_shared.py); serialize via '- Dependencies:' or split files"
+        in res_overlap["errors"]
+    ), res_overlap["errors"]
+
+    # Serialized via Dependencies or Blocked by allows shared file
+    res_dep = _two_task_ws(
+        "serialized_dep",
+        (
+            "## Task 1: Auth\n\n"
+            "- [x] Done.\n"
+            "- Covers: REQ-001 / AC-001-1\n"
+            "- Files: `src/shared.py`\n"
+            "- Dependencies: None\n"
+            "- Blocked by: None\n"
+        ),
+        (
+            "## Task 2: Billing\n\n"
+            "- [x] Done.\n"
+            "- Covers: REQ-001 / AC-001-2\n"
+            "- Files: `src/shared.py`\n"
+            "- Dependencies: Task 1\n"
+            "- Blocked by: None\n"
+        ),
+    )
+    assert res_dep["valid"] is True, res_dep["errors"]
+
+    res_blocked = _two_task_ws(
+        "serialized_blocked",
+        (
+            "## Task 1: Auth\n\n"
+            "- [x] Done.\n"
+            "- Covers: REQ-001 / AC-001-1\n"
+            "- Files: `src/shared.py`\n"
+            "- Dependencies: None\n"
+            "- Blocked by: None\n"
+        ),
+        (
+            "## Task 2: Billing\n\n"
+            "- [x] Done.\n"
+            "- Covers: REQ-001 / AC-001-2\n"
+            "- Files: `src/shared.py`\n"
+            "- Dependencies: None\n"
+            "- Blocked by: Task 1\n"
+        ),
+    )
+    assert res_blocked["valid"] is True, res_blocked["errors"]
+
+
+def test_round2_parallel_defaults_dag_paths_ac_backticks_and_brownfield_all(tmp_path: Path) -> None:
+    pkg = "docs/specs/2026-11-18-sample-feature"
+
+    def _multi_task_ws(name: str, tasks_body: str) -> dict:
+        ws = tmp_path / name
+        files = _make_package_files()
+        files[f"{pkg}/tasks.md"] = (
+            "# Tasks: Sample feature\n\n"
+            "Sources: [spec.md](./spec.md), [design.md](./design.md)\n\n"
+            f"{tasks_body}\n\n"
+            "## Gate 2: traceability and readiness\n\n"
+            "| Requirement | AC | ADR or rationale | Design | Task | Planned verification | Status / reason |\n"
+            "| --- | --- | --- | --- | --- | --- | --- |\n"
+            "| REQ-001 | AC-001-1 | [Rationale](./decisions.md#architectural-rationale) | [Interfaces](./design.md#interfaces-and-flow) | [Task 1](#task-1-first) | [AC-001-1](./verification.md#ac-001-1-req-001) | PASS |\n"
+            "| REQ-001 | AC-001-2 | [Rationale](./decisions.md#architectural-rationale) | [Boundaries](./design.md#boundaries-and-recovery) | [Task 2](#task-2-second) | [AC-001-2](./verification.md#ac-001-2-req-001) | PASS |\n\n"
+            "- Backward scope check: PASS\n"
+            "- Reference and catalog consistency: PASS\n"
+        )
+        _write_tree(ws, files)
+        return validate_workspace(ws)
+
+    # (1a) Omitted Dependencies / Blocked by default to independent -> overlap fails
+    res_omitted = _multi_task_ws(
+        "omitted_defaults",
+        (
+            "## Task 1: First\n\n- [x] Done.\n- Covers: REQ-001 / AC-001-1\n- Files: `src/a.py`\n\n"
+            "## Task 2: Second\n\n- [x] Done.\n- Covers: REQ-001 / AC-001-2\n- Files: `src/a.py`\n"
+        ),
+    )
+    assert res_omitted["valid"] is False
+    assert any("overlapping '- Files:' write-set" in e for e in res_omitted["errors"]), res_omitted["errors"]
+
+    # (1b) Punctuated N/A / None. / - treated as independent -> missing Files fails
+    res_punct = _multi_task_ws(
+        "punctuated_defaults",
+        (
+            "## Task 1: First\n\n- [x] Done.\n- Covers: REQ-001 / AC-001-1\n- Files: `src/a.py`\n- Dependencies: `None.`\n- Blocked by: N/A;\n\n"
+            "## Task 2: Second\n\n- [x] Done.\n- Covers: REQ-001 / AC-001-2\n- Dependencies: -\n- Blocked by: ``\n"
+        ),
+    )
+    assert res_punct["valid"] is False
+    assert any("missing required '- Files:' write-set" in e for e in res_punct["errors"]), res_punct["errors"]
+
+    # (1c) Actively blocked task (Blocked by: ADR-002) is skipped
+    res_actively_blocked = _multi_task_ws(
+        "actively_blocked",
+        (
+            "## Task 1: First\n\n- [x] Done.\n- Covers: REQ-001 / AC-001-1\n- Files: `src/a.py`\n- Dependencies: None\n- Blocked by: None\n\n"
+            "## Task 2: Second\n\n- [x] Done.\n- Covers: REQ-001 / AC-001-2\n- Files: `src/a.py`\n- Dependencies: None\n- Blocked by: ADR-002 decision\n"
+        ),
+    )
+    assert res_actively_blocked["valid"] is True, res_actively_blocked["errors"]
+
+    # (2a) Transitive chain Task 1 -> Task 2 -> Task 3 allows shared files & omitted Files
+    res_chain = _multi_task_ws(
+        "transitive_chain",
+        (
+            "## Task 1: First\n\n- [x] Done.\n- Covers: REQ-001 / AC-001-1\n- Dependencies: None\n- Blocked by: None\n\n"
+            "## Task 2: Second\n\n- [x] Done.\n- Covers: REQ-001 / AC-001-2\n- Files: `src/app.py`\n- Dependencies: Task 1\n- Blocked by: None\n\n"
+            "## Task 3: Third\n\n- [x] Done.\n- Covers: REQ-001 / AC-001-2\n- Files: `src/app.py`\n- Dependencies: Task 2\n- Blocked by: None\n"
+        ),
+    )
+    assert res_chain["valid"] is True, res_chain["errors"]
+
+    # (2b) Forked parallel branches Task 2 & Task 3 both depending on Task 1 must have disjoint Files
+    res_fork_bad = _multi_task_ws(
+        "fork_overlap",
+        (
+            "## Task 1: First\n\n- [x] Done.\n- Covers: REQ-001 / AC-001-1\n- Dependencies: None\n\n"
+            "## Task 2: Second\n\n- [x] Done.\n- Covers: REQ-001 / AC-001-2\n- Files: `src/shared.py`\n- Dependencies: Task 1\n\n"
+            "## Task 3: Third\n\n- [x] Done.\n- Covers: REQ-001 / AC-001-2\n- Files: `src/shared.py`\n- Dependencies: Task 1\n"
+        ),
+    )
+    assert res_fork_bad["valid"] is False
+    assert any("Task 2: Second" in e and "Task 3: Third" in e and "overlapping" in e for e in res_fork_bad["errors"]), res_fork_bad["errors"]
+
+    # (2c) 'Task 1' must NOT falsely match 'Task 10' dependency
+    res_t1_vs_t10 = _multi_task_ws(
+        "t1_vs_t10",
+        (
+            "## Task 1: First\n\n- [x] Done.\n- Covers: REQ-001 / AC-001-1\n- Files: `src/a.py`\n- Dependencies: None\n\n"
+            "## Task 2: Second\n\n- [x] Done.\n- Covers: REQ-001 / AC-001-2\n- Files: `src/a.py`\n- Dependencies: Task 10\n"
+        ),
+    )
+    assert res_t1_vs_t10["valid"] is False
+    assert any("overlapping '- Files:' write-set" in e for e in res_t1_vs_t10["errors"]), res_t1_vs_t10["errors"]
+
+    # (3a) Path normalization: markdown link + ::symbol + ./ prefix -> detected as overlap
+    res_norm_overlap = _multi_task_ws(
+        "norm_overlap",
+        (
+            "## Task 1: First\n\n- [x] Done.\n- Covers: REQ-001 / AC-001-1\n- Files: [retry](src/retry.py)\n- Dependencies: None\n\n"
+            "## Task 2: Second\n\n- [x] Done.\n- Covers: REQ-001 / AC-001-2\n- Files: `./src/retry.py::compute_backoff`\n- Dependencies: None\n"
+        ),
+    )
+    assert res_norm_overlap["valid"] is False
+    assert any("(src/retry.py)" in e for e in res_norm_overlap["errors"]), res_norm_overlap["errors"]
+
+    # (3b) Directory prefix containment overlaps; sibling prefix (src/auth vs src/auth_v2.py) does not
+    res_dir_overlap = _multi_task_ws(
+        "dir_overlap",
+        (
+            "## Task 1: First\n\n- [x] Done.\n- Covers: REQ-001 / AC-001-1\n- Files: `src/auth/`\n- Dependencies: None\n\n"
+            "## Task 2: Second\n\n- [x] Done.\n- Covers: REQ-001 / AC-001-2\n- Files: `src/auth/token.py`\n- Dependencies: None\n"
+        ),
+    )
+    assert res_dir_overlap["valid"] is False
+    assert any("overlapping '- Files:' write-set" in e for e in res_dir_overlap["errors"]), res_dir_overlap["errors"]
+
+    res_dir_sibling = _multi_task_ws(
+        "dir_sibling_ok",
+        (
+            "## Task 1: First\n\n- [x] Done.\n- Covers: REQ-001 / AC-001-1\n- Files: `src/auth`\n- Dependencies: None\n\n"
+            "## Task 2: Second\n\n- [x] Done.\n- Covers: REQ-001 / AC-001-2\n- Files: `src/auth_v2.py`\n- Dependencies: None\n"
+        ),
+    )
+    assert res_dir_sibling["valid"] is True, res_dir_sibling["errors"]
+
+    # (4) AC backtick parity across regexes and end-to-end validation
+    assert AC_DECL_RE.findall("- `AC-001-1` — Success\n") == ["AC-001-1"]
+    assert PROVISIONAL_AC_RE.findall("- `AC-001-2` — Deferred [PROVISIONAL]\n") == ["AC-001-2"]
+    assert VERIF_AC_HEADING_RE.findall("### `AC-001-1` (REQ-001)\n") == ["AC-001-1"]
+
+    ws_ac_bt = tmp_path / "ac_backticks"
+    files_bt = _make_package_files()
+    files_bt[f"{pkg}/spec.md"] = files_bt[f"{pkg}/spec.md"].replace("- AC-001-1", "- `AC-001-1`")
+    files_bt[f"{pkg}/verification.md"] = files_bt[f"{pkg}/verification.md"].replace(
+        "### AC-001-1 (REQ-001)", "### `AC-001-1` (REQ-001)"
+    )
+    _write_tree(ws_ac_bt, files_bt)
+    assert validate_workspace(ws_ac_bt)["valid"] is True
+
+    # (5) Brownfield --all: legacy pre-v3 package without 'First entered In-Testing' skips ambiguous ' - ' under --all
+    ws_legacy_all = tmp_path / "legacy_all"
+    legacy_pre_v3 = _make_package_files(
+        feature_id="2025-05-01-pre-v3",
+        status="In-Progress",
+        req_id="REQ-001",
+        ac_num="001",
+    )
+    pkg_pre = "docs/specs/2025-05-01-pre-v3"
+    legacy_pre_v3[f"{pkg_pre}/spec.md"] = (
+        legacy_pre_v3[f"{pkg_pre}/spec.md"]
+        .replace("- First entered In-Testing: 2026-11-18\n", "")
+        .replace(
+            "## Assumptions and owner-deferred questions",
+            "### REQ-002: Second legacy\n\n- AC-002-1 — Success: Ok.\n\n## Assumptions and owner-deferred questions",
+        )
+    )
+    for d in ("decisions.md", "design.md", "tasks.md", "verification.md"):
+        legacy_pre_v3[f"{pkg_pre}/{d}"] += "\nCovers: REQ-002.\n"
+    legacy_pre_v3[f"{pkg_pre}/tasks.md"] = legacy_pre_v3[f"{pkg_pre}/tasks.md"].replace(
+        "\n\n- Backward scope check:",
+        "\n| REQ-002 | AC-002-1 | [Rationale](./decisions.md#architectural-rationale) | [Interfaces](./design.md#interfaces-and-flow) | [Task 1](#task-1-implement-validation) | [AC-002-1](./verification.md#ac-002-1-req-002) | PASS |\n\n- Backward scope check:",
+    )
+    legacy_pre_v3[f"{pkg_pre}/verification.md"] = (
+        legacy_pre_v3[f"{pkg_pre}/verification.md"]
+        .replace(
+            "## Execution evidence",
+            "### AC-002-1 (REQ-002)\n\n- Method: Test.\n- Expected outcome: Ok.\n- Execution: [Run 1](#run-1--2026-11-18)\n\n## Execution evidence",
+        )
+        .replace("AC-001-2 `PASS`", "AC-001-2 `PASS`, AC-002-1 `PASS`")
+    )
+    legacy_pre_v3["docs/specs/INDEX.md"] = legacy_pre_v3["docs/specs/INDEX.md"].replace(
+        "| REQ-001 |", "| REQ-001 - REQ-002 |"
+    )
+    _write_tree(ws_legacy_all, legacy_pre_v3)
+
+    # Note: --all skips ambiguous ' - ' error on pre-v3 package without 'First entered In-Testing'
+    # (only non-ambiguous-hyphen checks run; here REQ-001/REQ-002 match _expand_id_cell)
+    res_legacy_all = validate_workspace(ws_legacy_all, force_all=True)
+    assert res_legacy_all["valid"] is True, res_legacy_all["errors"]
+
+    # Direct single-package targeting on pre-v3 package DOES report ambiguous ' - '
+    res_legacy_single = validate_workspace(ws_legacy_all / pkg_pre)
+    assert res_legacy_single["valid"] is False
+    assert any("ambiguous ' - ' separator" in e for e in res_legacy_single["errors"]), res_legacy_single["errors"]
+
+
+def _make_tasks_md(tasks_body: str) -> str:
+    return (
+        "# Tasks: Sample feature\n\n"
+        "Sources: [spec.md](./spec.md), [design.md](./design.md)\n\n"
+        f"{tasks_body}\n\n"
+        "## Gate 2: traceability and readiness\n\n"
+        "| Requirement | AC | ADR or rationale | Design | Task | Planned verification | Status / reason |\n"
+        "| --- | --- | --- | --- | --- | --- | --- |\n"
+        "| REQ-001 | AC-001-1 | [Rationale](./decisions.md#architectural-rationale) | [Interfaces](./design.md#interfaces-and-flow) | [Task 1](#task-1-first) | [AC-001-1](./verification.md#ac-001-1-req-001) | PASS |\n"
+        "| REQ-001 | AC-001-2 | [Rationale](./decisions.md#architectural-rationale) | [Boundaries](./design.md#boundaries-and-recovery) | [Task 2](#task-2-second) | [AC-001-2](./verification.md#ac-001-2-req-001) | PASS |\n\n"
+        "- Backward scope check: PASS\n"
+        "- Reference and catalog consistency: PASS\n"
+    )
+
+
+def test_round3_blocked_by_task_edge_vs_external_blocker(tmp_path: Path) -> None:
+    pkg = "docs/specs/2026-11-18-sample-feature"
+
+    # Task 2 blocked by Task 1 is ordered after Task 1, but still concurrent with Task 3 -> overlap fails
+    ws_blocked_task = tmp_path / "blocked_by_task"
+    files_bt = _make_package_files()
+    files_bt[f"{pkg}/tasks.md"] = _make_tasks_md(
+        "## Task 1: First\n\n- [x] Done.\n- Covers: REQ-001 / AC-001-1\n- Files: `src/a.py`\n- Dependencies: None\n- Blocked by: None\n\n"
+        "## Task 2: Second\n\n- [x] Done.\n- Covers: REQ-001 / AC-001-2\n- Files: `src/shared.py`\n- Dependencies: None\n- Blocked by: Task 1\n\n"
+        "## Task 3: Third\n\n- [x] Done.\n- Covers: REQ-001 / AC-001-2\n- Files: `src/shared.py`\n- Dependencies: None\n- Blocked by: None\n"
+    )
+    _write_tree(ws_blocked_task, files_bt)
+    res_bt = validate_workspace(ws_blocked_task)
+    assert res_bt["valid"] is False
+    assert any("Task 2: Second" in e and "Task 3: Third" in e and "overlapping" in e for e in res_bt["errors"]), res_bt["errors"]
+
+    # External non-task blocker still skips the unstarted task
+    ws_ext = tmp_path / "external_blocker"
+    files_ext = _make_package_files()
+    files_ext[f"{pkg}/tasks.md"] = _make_tasks_md(
+        "## Task 1: First\n\n- [x] Done.\n- Covers: REQ-001 / AC-001-1\n- Files: `src/shared.py`\n- Dependencies: None\n- Blocked by: None\n\n"
+        "## Task 2: Second\n\n- [x] Done.\n- Covers: REQ-001 / AC-001-2\n- Files: `src/shared.py`\n- Dependencies: None\n- Blocked by: External vendor API decision\n"
+    )
+    _write_tree(ws_ext, files_ext)
+    res_ext = validate_workspace(ws_ext)
+    assert res_ext["valid"] is True, res_ext["errors"]
+
+
+def test_round3_brownfield_and_planning_missing_files_gating(tmp_path: Path) -> None:
+    pkg = "docs/specs/2026-11-18-sample-feature"
+
+    # Brownfield In-Progress/Verified package with zero Files fields passes under workspace sweep (single_target=False)
+    for st in ("In-Progress", "Verified"):
+        ws_bf = tmp_path / f"bf_{st}"
+        files_bf = _make_package_files(
+            status=st,
+            first_entered="Never" if st == "In-Progress" else "2026-11-18",
+            task_checked=(st == "Verified"),
+            execution_ref="Not run." if st == "In-Progress" else "[Run 1](#run-1--2026-11-18)",
+            execution_evidence="No checks have been executed." if st == "In-Progress" else None,
+            real_world_obs="Confirmed in production." if st == "Verified" else "No real-world confirmation has been recorded.",
+        )
+        files_bf[f"{pkg}/tasks.md"] = _make_tasks_md(
+            "## Task 1: First\n\n- [x] Done.\n- Covers: REQ-001 / AC-001-1\n- Dependencies: None\n- Blocked by: None\n\n"
+            "## Task 2: Second\n\n- [x] Done.\n- Covers: REQ-001 / AC-001-2\n- Dependencies: None\n- Blocked by: None\n"
+        )
+        _write_tree(ws_bf, files_bf)
+        res_ws = validate_workspace(ws_bf, force_all=True)
+        assert res_ws["valid"] is True, res_ws["errors"]
+
+        # Single-package targeting (single_target=True) MUST fail missing - Files:
+        res_single = validate_workspace(ws_bf / pkg)
+        assert res_single["valid"] is False
+        assert any("missing required '- Files:' write-set" in e for e in res_single["errors"]), res_single["errors"]
+
+    # Non-Planning workspace sweep where at least one task declares Files MUST fail when another omits it
+    ws_partial_files = tmp_path / "partial_files_ws"
+    files_pf = _make_package_files()
+    files_pf[f"{pkg}/tasks.md"] = _make_tasks_md(
+        "## Task 1: First\n\n- [x] Done.\n- Covers: REQ-001 / AC-001-1\n- Files: `src/a.py`\n- Dependencies: None\n\n"
+        "## Task 2: Second\n\n- [x] Done.\n- Covers: REQ-001 / AC-001-2\n- Dependencies: None\n"
+    )
+    _write_tree(ws_partial_files, files_pf)
+    res_pf = validate_workspace(ws_partial_files, force_all=True)
+    assert res_pf["valid"] is False
+    assert any("Task 2: Second" in e and "missing required '- Files:' write-set" in e for e in res_pf["errors"]), res_pf["errors"]
+
+    # Planning workspace package (allow_unchecked=True) omitting - Files: passes, but explicit overlap still fails
+    ws_plan_omit = tmp_path / "plan_omit"
+    files_po = _make_package_files(
+        status="Planning",
+        first_entered="Never",
+        gate1_status="UNCHECKED",
+        gate2_status="UNCHECKED",
+        gate2_extra_status="UNCHECKED",
+        task_checked=False,
+        execution_ref="Not run.",
+        execution_evidence="No checks have been executed.",
+    )
+    files_po[f"{pkg}/tasks.md"] = _make_tasks_md(
+        "## Task 1: First\n\n- [ ] Todo.\n- Covers: REQ-001 / AC-001-1\n- Dependencies: None\n\n"
+        "## Task 2: Second\n\n- [ ] Todo.\n- Covers: REQ-001 / AC-001-2\n- Dependencies: None\n"
+    )
+    _write_tree(ws_plan_omit, files_po)
+    assert validate_workspace(ws_plan_omit)["valid"] is True
+
+    ws_plan_overlap = tmp_path / "plan_overlap"
+    files_pov = dict(files_po)
+    files_pov[f"{pkg}/tasks.md"] = _make_tasks_md(
+        "## Task 1: First\n\n- [ ] Todo.\n- Covers: REQ-001 / AC-001-1\n- Files: `src/shared.py`\n- Dependencies: None\n\n"
+        "## Task 2: Second\n\n- [ ] Todo.\n- Covers: REQ-001 / AC-001-2\n- Files: `src/shared.py`\n- Dependencies: None\n"
+    )
+    _write_tree(ws_plan_overlap, files_pov)
+    res_pov = validate_workspace(ws_plan_overlap)
+    assert res_pov["valid"] is False
+    assert any("overlapping '- Files:' write-set" in e for e in res_pov["errors"]), res_pov["errors"]
+
+
+def test_round3_glob_and_root_dot_overlap(tmp_path: Path) -> None:
+    pkg = "docs/specs/2026-11-18-sample-feature"
+
+    def _run_pair(name: str, f1: str, f2: str) -> dict:
+        ws = tmp_path / name
+        files = _make_package_files()
+        files[f"{pkg}/tasks.md"] = _make_tasks_md(
+            f"## Task 1: First\n\n- [x] Done.\n- Covers: REQ-001 / AC-001-1\n- Files: {f1}\n- Dependencies: None\n\n"
+            f"## Task 2: Second\n\n- [x] Done.\n- Covers: REQ-001 / AC-001-2\n- Files: {f2}\n- Dependencies: None\n"
+        )
+        _write_tree(ws, files)
+        return validate_workspace(ws)
+
+    for cname, f1, f2 in (
+        ("root_dot", "`.`", "`src/a.py`"),
+        ("root_dot_slash", "`./`", "`src/a.py`"),
+        ("glob_doublestar_file", "`src/**/*.py`", "`src/sub/mod.py`"),
+        ("glob_star_file", "`scripts/*.py`", "`scripts/common.py`"),
+        ("glob_vs_glob_nested", "`src/**/*.py`", "`src/sub/*.py`"),
+    ):
+        res = _run_pair(cname, f1, f2)
+        assert res["valid"] is False, f"{cname} should fail overlap"
+        assert any("overlapping '- Files:' write-set" in e for e in res["errors"]), res["errors"]
+
+    res_disjoint_globs = _run_pair("disjoint_globs", "`scripts/*.py`", "`tests/*.py`")
+    assert res_disjoint_globs["valid"] is True, res_disjoint_globs["errors"]
+
+
+def test_round3_explicit_files_none_vs_blank(tmp_path: Path) -> None:
+    pkg = "docs/specs/2026-11-18-sample-feature"
+
+    ws_none = tmp_path / "files_none_ok"
+    files_none = _make_package_files()
+    files_none[f"{pkg}/tasks.md"] = _make_tasks_md(
+        "## Task 1: First\n\n- [x] Done.\n- Covers: REQ-001 / AC-001-1\n- Files: `src/a.py`\n- Dependencies: None\n\n"
+        "## Task 2: Second\n\n- [x] Done.\n- Covers: REQ-001 / AC-001-2\n- Files: None\n- Dependencies: None\n"
+    )
+    _write_tree(ws_none, files_none)
+    res_none = validate_workspace(ws_none)
+    assert res_none["valid"] is True, res_none["errors"]
+
+    ws_blank = tmp_path / "files_blank_fail"
+    files_blank = _make_package_files()
+    files_blank[f"{pkg}/tasks.md"] = _make_tasks_md(
+        "## Task 1: First\n\n- [x] Done.\n- Covers: REQ-001 / AC-001-1\n- Files: `src/a.py`\n- Dependencies: None\n\n"
+        "## Task 2: Second\n\n- [x] Done.\n- Covers: REQ-001 / AC-001-2\n- Files: \n- Dependencies: None\n"
+    )
+    _write_tree(ws_blank, files_blank)
+    res_blank = validate_workspace(ws_blank)
+    assert res_blank["valid"] is False
+    assert any("Task 2: Second" in e and "missing required '- Files:' write-set" in e for e in res_blank["errors"]), res_blank["errors"]
+
+
+
+
+
 
 
 

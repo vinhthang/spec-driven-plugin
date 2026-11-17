@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import posixpath
 import re
 import sys
 from pathlib import Path
@@ -14,12 +15,12 @@ from urllib.parse import unquote
 VALID_STATUSES = {"Planning", "In-Progress", "In-Testing", "Verified", "Superseded", "Abandoned"}
 DERIVED_DOCS = ("design.md", "tasks.md", "verification.md")
 
-DECLARED_REQ_RE = re.compile(r"^#{2,6}\s+(REQ-\d+)\b", re.MULTILINE)
-DECLARED_ADR_RE = re.compile(r"^#{2,6}\s+(ADR-\d+)\b", re.MULTILINE)
-PROVISIONAL_REQ_RE = re.compile(r"^#{2,6}\s+(REQ-\d+)\b[^\n]*\[PROVISIONAL\]", re.MULTILINE)
-PROVISIONAL_AC_RE = re.compile(r"^[-*]\s+(AC-\d+-\d+)\b[^\n]*\[PROVISIONAL\]", re.MULTILINE)
-AC_DECL_RE = re.compile(r"^[-*]\s+(AC-\d+-\d+)\b", re.MULTILINE)
-VERIF_AC_HEADING_RE = re.compile(r"^#{2,6}\s+(AC-\d+-\d+)\b", re.MULTILINE)
+DECLARED_REQ_RE = re.compile(r"^#{2,6}\s+`?(REQ-\d+)`?\b", re.MULTILINE)
+DECLARED_ADR_RE = re.compile(r"^#{2,6}\s+`?(ADR-\d+)`?\b", re.MULTILINE)
+PROVISIONAL_REQ_RE = re.compile(r"^#{2,6}\s+`?(REQ-\d+)`?\b[^\n]*\[PROVISIONAL\]", re.MULTILINE)
+PROVISIONAL_AC_RE = re.compile(r"^[-*]\s+`?(AC-\d+-\d+)`?\b[^\n]*\[PROVISIONAL\]", re.MULTILINE)
+AC_DECL_RE = re.compile(r"^[-*]\s+`?(AC-\d+-\d+)`?\b", re.MULTILINE)
+VERIF_AC_HEADING_RE = re.compile(r"^#{2,6}\s+`?(AC-\d+-\d+)`?\b", re.MULTILINE)
 REQ_TOKEN_RE = re.compile(r"\bREQ-\d+\b")
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 HEADING_RE = re.compile(r"^#{1,6}\s+(.+?)\s*#*\s*$")
@@ -138,11 +139,11 @@ def _parse_table_rows(section_text: str) -> list[list[str]]:
 
 def _expand_id_cell(cell: str, prefix: str) -> set[str]:
     """Expand ID lists or ranges (`REQ-001..REQ-003`) from an INDEX.md cell."""
-    cleaned = cell.strip("` ").strip()
-    if not cleaned or cleaned.lower() == "none":
+    normalized = cell.replace("`", "").strip()
+    if not normalized or normalized.lower() == "none":
         return set()
-    ids = set(re.findall(rf"\b{prefix}-\d+\b", cleaned))
-    for m in re.finditer(rf"\b{prefix}-(\d+)\s*(?:\.\.|–)\s*{prefix}-(\d+)\b", cleaned):
+    ids = set(re.findall(rf"\b{prefix}-\d+\b", normalized))
+    for m in re.finditer(rf"\b{prefix}-(\d+)\s*(?:\.\.|[–—])\s*{prefix}-(\d+)\b", normalized):
         start_s, end_s = m.group(1), m.group(2)
         width = max(len(start_s), len(end_s), 3)
         for num in range(int(start_s), int(end_s) + 1):
@@ -217,6 +218,7 @@ def _parse_index(text: str, errors: list[str]) -> dict[str, dict[str, Any]]:
     _check_prose_hygiene("INDEX.md", text, errors)
     rows = _parse_table_rows(text)
     records: dict[str, dict[str, Any]] = {}
+    ambiguous_re = re.compile(r"\b(?:REQ|ADR)-\d+\s+-\s+(?:REQ|ADR)-\d+\b")
     for row in rows:
         if len(row) != 6:
             errors.append(f"INDEX.md: malformed row with {len(row)} columns (expected 6)")
@@ -225,11 +227,16 @@ def _parse_index(text: str, errors: list[str]) -> dict[str, dict[str, Any]]:
         if feat_id in records:
             errors.append(f"INDEX.md: duplicate catalog entry for '{feat_id}'")
             continue
+        ambiguous_hyphen = any(
+            ambiguous_re.search(cell.replace("`", ""))
+            for cell in (row[3], row[4])
+        )
         records[feat_id] = {
             "feature_id": feat_id,
             "status": row[2].strip("` "),
             "reqs": _expand_id_cell(row[3], "REQ"),
             "adrs": _expand_id_cell(row[4], "ADR"),
+            "ambiguous_hyphen": ambiguous_hyphen,
         }
     return records
 
@@ -269,6 +276,7 @@ def _validate_gate2_and_tasks(
     pkg_label: str,
     errors: list[str],
     *,
+    single_target: bool = True,
     allow_unchecked: bool = False,
 ) -> None:
     g2_section = _extract_section(tasks_text, "Gate 2")
@@ -319,6 +327,223 @@ def _validate_gate2_and_tasks(
 
     if status in {"In-Testing", "Verified"} and re.search(r"^\s*[-*]\s+\[\s\]", strip_fenced_code_blocks(tasks_text), re.MULTILINE):
         errors.append(f"{pkg_label}/tasks.md: unchecked task '- [ ]' remains in {status}")
+    _validate_task_parallelism(
+        tasks_text,
+        pkg_label,
+        errors,
+        single_target=single_target,
+        allow_unchecked=allow_unchecked,
+    )
+
+
+def _parse_task_blocks(tasks_text: str) -> list[tuple[str, dict[str, str]]]:
+    """Extract (title, metadata_fields) pairs from `## Task ...` blocks."""
+    tasks: list[tuple[str, dict[str, str]]] = []
+    current_title: str | None = None
+    buf: list[str] = []
+    for line in strip_fenced_code_blocks(tasks_text).splitlines():
+        if line.startswith("## "):
+            if current_title is not None:
+                tasks.append((current_title, _parse_metadata_fields("\n".join(buf))))
+                current_title = None
+                buf = []
+            heading = line[3:].strip()
+            if re.match(r"^Task\b", heading):
+                current_title = heading
+            continue
+        if current_title is not None:
+            buf.append(line)
+    if current_title is not None:
+        tasks.append((current_title, _parse_metadata_fields("\n".join(buf))))
+    return tasks
+
+
+_UNBLOCKED_VALUES = {"", "none", "n/a", "-"}
+
+
+def _normalize_file_token(raw_tok: str) -> str:
+    """Normalize a `- Files:` token by stripping links, `::symbol`, and `./`."""
+    tok = raw_tok.strip("` ").strip()
+    if not tok or tok.lower() in {"none", "n/a", "-"}:
+        return ""
+    link_m = re.match(r"^\[[^\]]*\]\(([^)]+)\)$", tok)
+    if link_m:
+        tok = link_m.group(1).strip("<> ")
+    tok = tok.split("::", 1)[0].strip("` ").strip()
+    if not tok:
+        return ""
+    return posixpath.normpath(tok)
+
+
+def _task_depends_on(deps_raw: str, target_title: str) -> bool:
+    """Return True if deps_raw references target_title by `Task <N>` or title substring."""
+    num_m = re.match(r"^Task\s+([A-Za-z0-9_.-]+?)(?::|\s|$)", target_title, re.IGNORECASE)
+    if num_m and re.search(rf"\bTask\s+{re.escape(num_m.group(1))}\b", deps_raw, re.IGNORECASE):
+        return True
+    if target_title.lower() in deps_raw.lower():
+        return True
+    if ":" in target_title and not re.search(r"\bTask\s+[A-Za-z0-9_.-]+", deps_raw, re.IGNORECASE):
+        suffix = target_title.split(":", 1)[1].strip().lower()
+        if len(suffix) >= 3 and suffix in deps_raw.lower():
+            return True
+    return False
+
+
+def _has_glob(path: str) -> bool:
+    return any(ch in path for ch in "*?[")
+
+
+def _glob_static_root(pattern: str) -> str:
+    prefix_parts: list[str] = []
+    for part in pattern.split("/"):
+        if _has_glob(part):
+            break
+        prefix_parts.append(part)
+    return "/".join(prefix_parts) if prefix_parts else "."
+
+
+def _glob_match(pattern: str, candidate: str) -> bool:
+    parts: list[str] = ["^"]
+    i = 0
+    n = len(pattern)
+    while i < n:
+        if pattern.startswith("**/", i):
+            parts.append("(?:.+/)?")
+            i += 3
+        elif pattern.startswith("/**", i) and i + 3 == n:
+            parts.append("(?:/.*)?")
+            i += 3
+        elif pattern.startswith("**", i):
+            parts.append(".*")
+            i += 2
+        elif pattern[i] == "*":
+            parts.append("[^/]*")
+            i += 1
+        elif pattern[i] == "?":
+            parts.append("[^/]")
+            i += 1
+        else:
+            parts.append(re.escape(pattern[i]))
+            i += 1
+    parts.append("$")
+    return re.match("".join(parts), candidate) is not None
+
+
+def _paths_overlap(p1: str, p2: str) -> bool:
+    """Return True if two normalized file/dir/glob tokens overlap."""
+    if p1 == p2 or p1 == "." or p2 == ".":
+        return True
+    if p1.startswith(p2 + "/") or p2.startswith(p1 + "/"):
+        return True
+    g1, g2 = _has_glob(p1), _has_glob(p2)
+    if g1 and _glob_match(p1, p2):
+        return True
+    if g2 and _glob_match(p2, p1):
+        return True
+    if g1 and g2:
+        r1, r2 = _glob_static_root(p1), _glob_static_root(p2)
+        if r1 == "." or r2 == "." or r1 == r2 or r1.startswith(r2 + "/") or r2.startswith(r1 + "/"):
+            return True
+    return False
+
+
+def _validate_task_parallelism(
+    tasks_text: str,
+    pkg_label: str,
+    errors: list[str],
+    *,
+    single_target: bool = True,
+    allow_unchecked: bool = False,
+) -> None:
+    """Ensure concurrently executable unblocked tasks declare disjoint non-empty `- Files:` write-sets."""
+    parsed_tasks = _parse_task_blocks(tasks_text)
+    any_files_field = any("Files" in fields for _, fields in parsed_tasks)
+    require_files = (not allow_unchecked) and (single_target or any_files_field)
+
+    active_tasks: list[tuple[str, str, list[str], bool]] = []
+    for title, fields in parsed_tasks:
+        blocked_raw = fields.get("Blocked by", "none")
+        blocked_norm = blocked_raw.strip("` .;,").lower()
+        refs_other_task = blocked_norm not in _UNBLOCKED_VALUES and any(
+            _task_depends_on(blocked_raw, ot) for ot, _ in parsed_tasks if ot != title
+        )
+        if blocked_norm not in _UNBLOCKED_VALUES and not refs_other_task:
+            continue
+
+        deps_field = fields.get("Dependencies", "none")
+        deps_parts = [deps_field] if deps_field.strip("` .;,").lower() not in _UNBLOCKED_VALUES else []
+        if refs_other_task:
+            deps_parts.append(blocked_raw)
+        deps_raw = ", ".join(deps_parts) if deps_parts else "none"
+
+        has_files_field = "Files" in fields
+        files_raw = fields.get("Files", "")
+        is_explicit_none = has_files_field and files_raw.strip("` .;,").lower() in {"none", "n/a", "-"}
+        files = [
+            norm
+            for tok in files_raw.split(",")
+            if (norm := _normalize_file_token(tok))
+        ]
+        satisfied_files = is_explicit_none or bool(files)
+        active_tasks.append((title, deps_raw, files, satisfied_files))
+
+    n = len(active_tasks)
+    if n < 2:
+        return
+
+    reachable: list[set[int]] = [set() for _ in range(n)]
+    for i, (_, deps_raw, _, _) in enumerate(active_tasks):
+        deps_norm = deps_raw.strip("` .;,").lower()
+        if deps_norm in _UNBLOCKED_VALUES:
+            continue
+        for j, (other_title, _, _, _) in enumerate(active_tasks):
+            if i != j and _task_depends_on(deps_raw, other_title):
+                reachable[i].add(j)
+
+    changed = True
+    while changed:
+        changed = False
+        for i in range(n):
+            extra: set[int] = set()
+            for j in reachable[i]:
+                extra |= reachable[j]
+            extra.discard(i)
+            if not extra.issubset(reachable[i]):
+                reachable[i] |= extra
+                changed = True
+
+    concurrent_indices: set[int] = set()
+    concurrent_pairs: list[tuple[int, int]] = []
+    for i in range(n):
+        for j in range(i + 1, n):
+            if j not in reachable[i] and i not in reachable[j]:
+                concurrent_indices.add(i)
+                concurrent_indices.add(j)
+                concurrent_pairs.append((i, j))
+
+    if require_files:
+        for i in sorted(concurrent_indices):
+            title, _, _, satisfied_files = active_tasks[i]
+            if not satisfied_files:
+                errors.append(
+                    f"{pkg_label}/tasks.md: parallel task '{title}' missing required '- Files:' write-set"
+                )
+
+    for i, j in concurrent_pairs:
+        t1_title, _, t1_files, _ = active_tasks[i]
+        t2_title, _, t2_files, _ = active_tasks[j]
+        overlaps: list[str] = []
+        for p1 in t1_files:
+            for p2 in t2_files:
+                if _paths_overlap(p1, p2):
+                    overlaps.append(p1 if p1 == p2 else f"{p1} <-> {p2}")
+        if overlaps:
+            unique_overlaps = sorted(set(overlaps))
+            errors.append(
+                f"{pkg_label}/tasks.md: parallel tasks '{t1_title}' and '{t2_title}' "
+                f"have overlapping '- Files:' write-set ({', '.join(unique_overlaps)}); "
+                "serialize via '- Dependencies:' or split files"
+            )
 
 
 def _validate_execution_runs(
@@ -385,7 +610,7 @@ def _validate_execution_runs(
 
     current_ac: str | None = None
     for line in planned_sec.splitlines():
-        hm = re.match(r"^#{2,6}\s+(AC-\d+-\d+)\b", line)
+        hm = VERIF_AC_HEADING_RE.match(line)
         if hm:
             current_ac = hm.group(1)
         elif current_ac and re.match(r"^[-*]\s+Execution:", line):
@@ -497,6 +722,11 @@ def _validate_single_package(
         errors.append(f"INDEX.md: missing catalog entry for '{pkg_id}'")
     else:
         rec = index_records[pkg_id]
+        if rec.get("ambiguous_hyphen") and (single_target or "First entered In-Testing" in meta):
+            errors.append(
+                f"INDEX.md: ambiguous ' - ' separator in catalog row for '{pkg_id}'; "
+                "use '..' or '–' for inclusive ranges, or ',' for non-contiguous IDs"
+            )
         if rec["status"] != status:
             errors.append(f"INDEX.md: status '{rec['status']}' mismatches spec.md '{status}' for '{pkg_id}'")
         if rec["reqs"] != set(declared_reqs):
@@ -554,6 +784,7 @@ def _validate_single_package(
                 provisional_acs,
                 pkg_id,
                 errors,
+                single_target=single_target,
                 allow_unchecked=is_workspace_planning,
             )
         if "verification.md" in contents and not is_workspace_planning:
@@ -643,7 +874,7 @@ def validate_workspace(root: Path | str, *, stage: str = "full", force_all: bool
 
     for kind, owners_map in (("REQ", req_owners), ("ADR", adr_owners)):
         for item_id, owners in sorted(owners_map.items()):
-            if len(owners) > 1:
+            if len(owners) > 1 and (single_pkg is None or single_pkg.name in owners):
                 errors.append(f"Duplicate declared {kind} {item_id} across packages: {', '.join(owners)}")
 
     return {

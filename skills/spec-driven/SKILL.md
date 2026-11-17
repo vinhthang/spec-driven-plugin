@@ -12,6 +12,7 @@ Turn user intent and repository evidence into an implementable, verifiable speci
 - **New specification:** Read [templates.md](references/templates.md) (and [example.md](references/example.md) to calibrate brevity), then follow `## Ground the package` and `## Author and validate`.
 - **Change, delta, defect, or status update:** Read [lifecycle.md](references/lifecycle.md) first to choose the revision route from testing history—not just today's status—and read [templates.md](references/templates.md) when adding delta or verification sections.
 - **Specification review:** Follow `## Review an existing package`, consulting [lifecycle.md](references/lifecycle.md) and [templates.md](references/templates.md) to check lifecycle and gate compliance.
+- **Antigravity 2.0 / Gemini 4 multi-agent execution:** Consult [antigravity.md](references/antigravity.md) for tiered model routing, parallel task workspace partitioning (`Workspace="share"`, `run_workflow`, `swarm`), and zero-duplication Brain Artifact pointers.
 
 Keep documents readable in one sitting: a 1-requirement change needs only ~15–30 lines per file, one-line design bullets, and no `ADR-NNN` block when existing constraints fix the approach. Never pad sections by repeating prose across files. Do not impose `docs/specs/` on unrelated edits, and respect the user's authorization scope (authoring authorization does not authorize implementation, and implementation authorization does not authorize publishing or deployment).
 
@@ -53,7 +54,7 @@ Owner-deferred `[PROVISIONAL]` items pass Gate 1's criteria and open-decision ch
 
 ### 3. Derive design, tasks, and verification plans
 
-After Gate 1 passes, write `design.md`, `tasks.md`, and `verification.md` using [templates.md](references/templates.md). Map actual paths/symbols, boundary handling, and task dependencies. Map every task to at least one requirement; reproduce bugs first when feasible.
+After Gate 1 passes, write `design.md`, `tasks.md`, and `verification.md` using [templates.md](references/templates.md). Map actual paths/symbols, boundary handling, owned task write-sets (`- Files:`), and task dependencies (tasks with `Dependencies: None` and strictly disjoint `Files` sets may execute concurrently in isolated workspaces; overlapping `Files` sets must serialize). Map every task to at least one requirement; reproduce bugs first when feasible.
 
 Write `## Planned checks` (`### AC-001-1 (REQ-001)` with `Execution: Not run.`) before execution. Leave `## Execution evidence` and `## Real-world observations` unpopulated until checks actually run; a plan must never claim a test ran.
 
@@ -61,7 +62,7 @@ Write `## Planned checks` (`### AC-001-1 (REQ-001)` with `Execution: Not run.`) 
 
 In `tasks.md`, give every acceptance criterion a row linking to its requirement, `ADR-NNN` (or `[Rationale](./decisions.md#architectural-rationale)` when constrained), design section, task, and planned verification anchor. Verify backward scope (every component and task serves a requirement) and reference/catalog consistency.
 
-Rows start `UNCHECKED`; record `PASS`, `FAIL`, or `BLOCKED` with reasons (`PASS` validates the plan, not execution). Owner-deferred criteria and dependent tasks stay `BLOCKED`. When `python3` is available, run `python3 <skill-dir>/scripts/validate_specs.py docs/specs/<feature-id>` to verify links, anchors, IDs, and gate states deterministically; otherwise check them manually. Any `FAIL` or `UNCHECKED` row blocks implementation; independent settled work may proceed when all non-blocked rows pass and the owner authorizes that scope.
+Rows start `UNCHECKED`; record `PASS`, `FAIL`, or `BLOCKED` with reasons (`PASS` validates the plan, not execution). Owner-deferred criteria and dependent tasks stay `BLOCKED`. When `python3` is available, run `python3 <skill-dir>/scripts/validate_specs.py docs/specs/<feature-id>` to verify links, anchors, parallel task `Files:` write-sets, Gate 1/2 states, and ID uniqueness for `<feature-id>` against all repository packages (pass `--all` on `docs/specs` to audit historical cross-package duplicates too); otherwise check them manually. Any `FAIL` or `UNCHECKED` row blocks implementation; independent settled work may proceed when all non-blocked rows pass and the owner authorizes that scope.
 
 ### 5. Execute only within authorization; record reality
 

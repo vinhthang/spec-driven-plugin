@@ -4,7 +4,7 @@ Use these as starting structures, not pre-approved evidence. Replace `<angle-bra
 
 ## Catalog: `docs/specs/INDEX.md`
 
-Create after inventorying any existing packages. Use one 6-column row per package; keep `Status`, `REQ IDs`, and `ADR IDs` synchronized with `spec.md` and `decisions.md`.
+Create after inventorying any existing packages. Use one 6-column row per package; keep `Status`, `REQ IDs`, and `ADR IDs` synchronized with `spec.md` and `decisions.md` (use `..` or `–` for inclusive ID ranges such as `REQ-001..REQ-003`, and commas `,` for non-contiguous IDs such as `REQ-001, REQ-003`).
 
 ```markdown
 # Feature specifications
@@ -196,6 +196,7 @@ Sources: [spec.md](./spec.md), [design.md](./design.md)
 
 - [ ] Complete the work and its applicable checks.
 - Covers: REQ-001 / AC-001-1, AC-001-2
+- Files: <owned paths or symbols>
 - Dependencies: None
 - Blocked by: None
 - Work: <Actionable change and validation; failing reproducer first for bugs when feasible.>
@@ -212,7 +213,7 @@ Sources: [spec.md](./spec.md), [design.md](./design.md)
 - Reference and catalog consistency: UNCHECKED
 ```
 
-Update heading anchors to match actual titles. Use one Gate 2 row per `AC`; a task may cover several criteria, and multiple tasks may appear in one row. `PASS` validates plan completeness, not code execution. Use `BLOCKED` for `[PROVISIONAL]` scope and `FAIL` for missing/broken coverage. Check off `- [x]` and fill `Completion evidence:` only after work and checks succeed.
+Update heading anchors to match actual titles. Tasks with `Dependencies: None` and strictly disjoint `Files` write-sets may execute concurrently in isolated multi-agent workspaces; tasks with overlapping `Files` must serialize. Use one Gate 2 row per `AC`; a task may cover several criteria, and multiple tasks may appear in one row. `PASS` validates plan completeness, not code execution. Use `BLOCKED` for `[PROVISIONAL]` scope and `FAIL` for missing/broken coverage. Check off `- [x]` and fill `Completion evidence:` only after work and checks succeed.
 
 ## `verification.md`
 
