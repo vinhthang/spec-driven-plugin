@@ -1,0 +1,8 @@
+interface:
+  display_name: "Spec-Driven"
+  short_description: "Code-grounded five-doc specs, traceability, and lifecycle"
+  brand_color: "#2563EB"
+  default_prompt: "Use $spec-driven to write or review a grounded feature specification in docs/specs."
+
+policy:
+  allow_implicit_invocation: true

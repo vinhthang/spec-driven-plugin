@@ -3,4 +3,6 @@ __pycache__/
 .pytest_cache/
 .venv/
 venv/
+.code-review/
+review.json
 .DS_Store
