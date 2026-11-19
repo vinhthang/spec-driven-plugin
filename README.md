@@ -22,9 +22,10 @@ Implementation follows explicit human authorization; requesting a specification 
 - [templates.md](skills/spec-driven/references/templates.md): `INDEX.md` and five-document templates, `[PROVISIONAL]` stubs, delta patterns, and run-evidence format.
 - [lifecycle.md](skills/spec-driven/references/lifecycle.md): six-state transitions, `First entered In-Testing` routing, delta chains, three defect cases, `[PROVISIONAL]` descoping, and out-of-band drift.
 - [example.md](skills/spec-driven/references/example.md): complete, right-sized 1-requirement calibration example ("one-sitting rule").
-- [antigravity.md](skills/spec-driven/references/antigravity.md): Google Antigravity 2.0 and Gemini 4 multi-agent orchestration (`invoke_subagent` `Workspace` modes, `run_workflow`, `swarm`, and zero-duplication Brain Artifact pointers).
+- [antigravity.md](skills/spec-driven/references/antigravity.md): Google Antigravity 2.0 multi-agent orchestration (pragmatic Primary Agent execution vs. `invoke_subagent` / `run_workflow` / `swarm` `Workspace="share"` isolation, `inherit` model default, and zero-duplication Brain Artifact pointers).
 - [validate_specs.py](skills/spec-driven/scripts/validate_specs.py): optional zero-dependency Python 3 stdlib CLI linter for verifying `INDEX.md` sync, package ID collisions (`--all` for full workspace history), `#heading-anchors`, parallel task `Files:` write-sets, and Gate 1/2 completeness (read-only, zero lifecycle hooks).
 - [openai.yaml](skills/spec-driven/agents/openai.yaml): OpenAI Codex UI metadata.
+- [c4-spec-driven.md](c4-spec-driven.md): self-contained single-file edition for Gemini Web / Gems (omit the top 4-line YAML frontmatter if pasting directly into a Gem's Instructions box).
 - [AGENTS.md](rules/AGENTS.md) & [plugin.json](plugin.json): Google Antigravity plugin rule and manifest.
 - [tests/test_validate_specs.py](tests/test_validate_specs.py): repository test suite (not copied into standalone skill installations).
 
@@ -60,3 +61,11 @@ Copy-Item -LiteralPath './skills/spec-driven' -Destination $skillDestination -Re
 ```
 
 Standalone skill installation adds no global rules and registers zero lifecycle hooks.
+
+## Use in Gemini Web (`c4-*` Single-File Suite)
+
+Single-file self-contained editions for Gemini Web / Gems (share the repo or raw URLs directly with Gemini Web, or paste into a Gem's Instructions box omitting the top 4-line YAML frontmatter):
+
+- **[c4-spec-driven.md](c4-spec-driven.md)** ([raw](https://raw.githubusercontent.com/vinhthang/spec-driven-plugin/main/c4-spec-driven.md)): Author, update, triage, and maintain five-document `docs/specs/<feature-id>/` packages.
+- **[c4-spec-review.md](https://github.com/vinhthang/ai-review-plugin/blob/main/c4-spec-review.md)** ([raw](https://raw.githubusercontent.com/vinhthang/ai-review-plugin/main/c4-spec-review.md)): Companion normative specification & Gate 1 peer reviewer (`ai-review-plugin`).
+- **[c4-design-review.md](https://github.com/vinhthang/ai-review-plugin/blob/main/c4-design-review.md)** ([raw](https://raw.githubusercontent.com/vinhthang/ai-review-plugin/main/c4-design-review.md)): Companion derived design, parallel task DAG, & Gate 2 peer reviewer (`ai-review-plugin`).
